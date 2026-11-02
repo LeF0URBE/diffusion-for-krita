@@ -17,7 +17,8 @@ regions, control layers and upscaling, with [ComfyUI](https://github.com/comfyan
 * **Reference images**: style and composition transfer, face swap.
 * **Regions**: give image areas defined by layers their own text descriptions.
 * **Job queue and history**: queue and cancel jobs, browse earlier results and prompts.
-* **Styles**: presets with your own checkpoints, LoRA, samplers and more.
+* **Styles**: presets with your own checkpoints, LoRA, text encoder, samplers and more.
+* **Improve Prompt**: one click rewrites your prompt in more detail with a language model ([details](#improve-prompt)).
 * **Krita 5 and Krita 6**: one download for both.
 * **No GPU? Use Runpod**: rent a GPU with your own [Runpod](#runpod) account, started and stopped from Krita.
 
@@ -165,6 +166,25 @@ When you install the managed server you choose "workloads": the minimal set of m
 ### <a name="custom-sampler-presets"></a> Custom sampler presets
 Add your own sampler presets in `presets/samplers.json` in the plugin's settings folder (the file has examples).
 Restart Krita for changes to take effect.
+
+## <a name="improve-prompt"></a> Improve Prompt and text encoders
+**Improve Prompt** is the wand button in the top right corner of the prompt box. It rewrites the prompt
+with a language model, in the format the style's model wants: Danbooru tags for Illustrious, keywords for
+SD 1.5 / XL, a detailed paragraph for Flux, Qwen, Krea 2, MOSS and others, and a single clear instruction
+for edit models. Ctrl+Z restores your original prompt. Pick the language model in **Settings > Interface**:
+* **ComfyUI (text encoder of the style)**: no setup. The style's own text encoder writes the prompt through
+  ComfyUI's `TextGenerate` node (ComfyUI 0.43 or newer). Works with Qwen3-VL (Krea 2, Fibo 2, Qwen Image 2),
+  Qwen3.5 (MOSS) and other LLM text encoders that ComfyUI can run for text; not with CLIP or T5
+  (SD, Flux 1, Chroma). The first run loads the encoder, which takes a while.
+* **OpenAI-compatible server**: any `/v1/chat/completions` API, such as llama.cpp's `llama-server`, Ollama
+  (`http://localhost:11434/v1`), LM Studio or OpenAI. Set the URL, the model name and an API key if needed.
+
+"Improve Prompt Instructions" adds your own rules, e.g. "keep it under 40 words" or "always anime style".
+
+**Text encoder per style**: under *Checkpoint configuration (advanced)* in the style settings you can pick
+the text encoder file, the same way as the VAE. Use it for a different quantization or a fine-tuned text
+encoder of the same type (e.g. an abliterated Qwen3-VL for Qwen Image 2). It replaces the LLM or T5
+encoder; SD 1.5, SDXL, Illustrious and SD3 keep their CLIP encoders. Improve Prompt also uses this file.
 
 ## <a name="poses"></a> Poses and pose transfer
 

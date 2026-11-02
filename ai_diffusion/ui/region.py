@@ -3,10 +3,13 @@ from __future__ import annotations
 from enum import Enum
 from functools import partial
 
+from .. import eventloop
 from ..backend.client import Client
 from ..document import LayerType
 from ..image import Bounds
 from ..localization import translate as _
+from ..model.model import Error
+from ..model.prompt_enhance import improve_prompt
 from ..model.properties import Binding, bind
 from ..model.region import Region, RegionLink, RootRegion, translate_prompt
 from ..model.root import root
@@ -20,6 +23,7 @@ from ..qt.QtGui import (
     QPainter,
     QPixmap,
     QResizeEvent,
+    QTextCursor,
 )
 from ..qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget
 from ..util import ensure
@@ -186,6 +190,13 @@ class ActiveRegionWidget(QFrame):
             " border: 1px solid #60808080; border-radius: 2px; }"
         )
         self._language_button.clicked.connect(self._toggle_translation_enabled)
+
+        self._improve_button = QToolButton(self)
+        self._improve_button.setIcon(theme.icon("improve-prompt"))
+        self._improve_button.setAutoRaise(True)
+        self._improve_button.setToolTip(self._improve_help)
+        self._improve_button.clicked.connect(self._improve_prompt)
+        self._is_improving = False
 
         font_height = QFontMetrics(self.font()).height()
         self._negative_warning = QLabel(self)
@@ -408,6 +419,45 @@ class ActiveRegionWidget(QFrame):
                 text = self._lang_help_disabled
             self._language_button.setToolTip(text)
 
+    _improve_help = _(
+        "Improve Prompt: rewrite the prompt in more detail with a language model (Ctrl+Z to undo)."
+    )
+
+    def _improve_prompt(self):
+        if self._is_improving or self.region is None:
+            return
+        eventloop.run(self._run_improve_prompt(self.region))
+
+    async def _run_improve_prompt(self, region: RootRegion | Region):
+        model = self._root._model
+        original = region.positive
+        self._is_improving = True
+        self._improve_button.setEnabled(False)
+        self._improve_button.setToolTip(_("Improving prompt..."))
+        try:
+            client = root.connection.client_if_connected
+            result = await improve_prompt(original, model.style, client)
+            if self.region is region and region.positive == original:
+                self._replace_positive(result)
+            else:
+                region.positive = result
+        except Exception as e:
+            model.error = Error.from_string(_("Improve Prompt failed") + f": {e!s}")
+        finally:
+            self._is_improving = False
+            self._improve_button.setEnabled(True)
+            self._improve_button.setToolTip(self._improve_help)
+
+    def _replace_positive(self, text: str):
+        """Replace the text as one edit, so that Ctrl+Z restores the original prompt."""
+        with theme.SignalBlocker(self.positive):  # no auto-completion popup
+            cursor = self.positive.textCursor()
+            cursor.beginEditBlock()
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.insertText(text)
+            cursor.endEditBlock()
+        self.positive.text_changed.emit(self.positive.text)
+
     def _update_prompt_widgets(self):
         if not self.is_slim:
             self.positive.line_count = settings.prompt_line_count
@@ -423,6 +473,12 @@ class ActiveRegionWidget(QFrame):
         self._show_negative_warning()
 
     def _layout_language_button(self):
+        s = self.fontMetrics().height() + 4
+        pos = self.positive.geometry().topRight()
+        self._improve_button.resize(QSize(s, s))
+        self._improve_button.move(pos.x() - s - 2, pos.y() + 2)
+        self._improve_button.raise_()
+
         if settings.prompt_translation:
             pos = self.positive.geometry().bottomRight()
             if self.has_negative:

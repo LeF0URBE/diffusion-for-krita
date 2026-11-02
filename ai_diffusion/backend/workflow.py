@@ -118,6 +118,15 @@ def _sampler_params(sampling: SamplingInput, extent: Extent, strength: float | N
     return params
 
 
+def custom_text_encoder(checkpoint: CheckpointInput) -> str | None:
+    """Text encoder file chosen in the style, if the architecture allows replacing it."""
+    te = checkpoint.text_encoder
+    if te and te != StyleSettings.text_encoder.default:
+        if checkpoint.version.supports_text_encoder_override:
+            return te
+    return None
+
+
 def load_checkpoint_with_lora(w: ComfyWorkflow, checkpoint: CheckpointInput, models: ClientModels):
     arch = checkpoint.version
     model_info = models.checkpoints.get(checkpoint.checkpoint)
@@ -137,9 +146,14 @@ def load_checkpoint_with_lora(w: ComfyWorkflow, checkpoint: CheckpointInput, mod
 
     if clip is None or arch is Arch.sd3:
         te = models.for_arch(arch).text_encoder
+        custom_te = custom_text_encoder(checkpoint)
+
+        def encoder(name: str):
+            if custom_te and name == arch.main_text_encoder:
+                return custom_te
+            return te[name]
+
         match arch:
-            case Arch.sd15:
-                clip = w.load_clip(te["clip_l"], "stable_diffusion")
             case Arch.sdxl | Arch.illu | Arch.illu_v:
                 clip = w.load_dual_clip(te["clip_g"], te["clip_l"], type="sdxl")
             case Arch.sd3:
@@ -148,32 +162,12 @@ def load_checkpoint_with_lora(w: ComfyWorkflow, checkpoint: CheckpointInput, mod
                 else:
                     clip = w.load_dual_clip(te["clip_g"], te["clip_l"], type="sd3")
             case Arch.flux | Arch.flux_k:
-                clip = w.load_dual_clip(te["clip_l"], te["t5"], type="flux")
-            case Arch.flux2_4b:
-                clip = w.load_clip(te["qwen_3_4b"], type="flux2")
-            case Arch.flux2_9b:
-                clip = w.load_clip(te["qwen_3_8b"], type="flux2")
+                clip = w.load_dual_clip(te["clip_l"], encoder("t5"), type="flux")
             case Arch.chroma:
-                clip = w.load_clip(te["t5"], type="chroma")
+                clip = w.load_clip(encoder("t5"), type="chroma")
                 clip = w.t5_tokenizer_options(clip, min_padding=1, min_length=0)
-            case Arch.qwen | Arch.qwen_e | Arch.qwen_e_p | Arch.qwen_l:
-                clip = w.load_clip(te["qwen"], type="qwen_image")
-            case Arch.anima:
-                clip = w.load_clip(te["qwen_3_06b"], type="omnigen2")
-            case Arch.zimage:
-                clip = w.load_clip(te["qwen_3_4b"], type="lumina2")
-            case Arch.ernie:
-                clip = w.load_clip(te["ministral"], type="flux2")
-            case Arch.krea2:
-                clip = w.load_clip(te["qwen_3vl_4b"], type="krea2")
-            case Arch.qwen2:
-                clip = w.load_clip(te["qwen_3vl_8b"], type="qwen_image")
-            case Arch.moss:
-                clip = w.load_clip(te["qwen_3_5_9b"], type="moss_image")
-            case Arch.fibo2 | Arch.fibo2_e:
-                clip = w.load_clip(te["qwen_3vl_4b"], type="fibo2")
-            case Arch.h3_e:
-                clip = w.load_clip(te["qwen_3vl_32b_h3"], type="minimax")
+            case _ if arch.clip_loader_type and len(arch.text_encoders) == 1:
+                clip = w.load_clip(encoder(arch.main_text_encoder), type=arch.clip_loader_type)
             case _:
                 raise RuntimeError(f"No text encoder for model architecture {arch.name}")
 
@@ -1277,7 +1271,8 @@ def h3_edit(
         model_file = models.all.checkpoints[checkpoint.checkpoint].filename
         custom_vae = checkpoint.vae and checkpoint.vae != StyleSettings.vae.default
         vae = checkpoint.vae if custom_vae else models.vae
-        h3 = w.h3_studio_models(model_file, models.text_encoder["qwen_3vl_32b_h3"], vae)
+        te = custom_text_encoder(checkpoint) or models.text_encoder["qwen_3vl_32b_h3"]
+        h3 = w.h3_studio_models(model_file, te, vae)
         for lora in checkpoint.loras:
             h3 = w.h3_studio_lora(h3, lora.name, lora.strength)
         job = w.h3_studio_edit(h3, image, instruction, extent, references[:8])

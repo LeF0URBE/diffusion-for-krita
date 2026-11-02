@@ -62,6 +62,14 @@ class StyleSettings:
         _("Model to encode and decode images. Commonly affects saturation and sharpness."),
     )
 
+    text_encoder = Setting(
+        _("Text Encoder"),
+        "Checkpoint Default",
+        _(
+            "Model which turns the text prompt into conditioning. Use it to swap in a different quantization or a fine-tuned text encoder of the same type."
+        ),
+    )
+
     clip_skip = Setting(
         _("Clip Skip"),
         0,
@@ -125,6 +133,7 @@ class Style(QObject):
     style_prompt: str = StyleSettings.style_prompt.default
     negative_prompt: str = StyleSettings.negative_prompt.default
     vae: str = StyleSettings.vae.default
+    text_encoder: str = StyleSettings.text_encoder.default
     clip_skip: int = StyleSettings.clip_skip.default
     v_prediction_zsnr: bool = StyleSettings.v_prediction_zsnr.default
     rescale_cfg: float = StyleSettings.rescale_cfg.default
@@ -220,6 +229,7 @@ class Style(QObject):
         return CheckpointInput(
             checkpoint=self.preferred_checkpoint(available_checkpoints),
             vae=self.vae,
+            text_encoder=self.text_encoder,
             clip_skip=self.clip_skip,
             v_prediction_zsnr=self.v_prediction_zsnr,
             rescale_cfg=self.rescale_cfg,

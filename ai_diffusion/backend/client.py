@@ -211,6 +211,7 @@ class ClientModels:
     def __init__(self) -> None:
         self.checkpoints: dict[str, CheckpointInfo] = {}
         self.vae: list[str] = []
+        self.text_encoders: list[str] = []
         self.loras: list[str] = []
         self.upscalers: list[str] = []
         self.node_inputs = ComfyObjectInfo({})
@@ -223,6 +224,7 @@ class ClientModels:
             k: CheckpointInfo.from_dict(v) for k, v in data.get("checkpoints", {}).items()
         }
         models.vae = data.get("vae", [])
+        models.text_encoders = data.get("text_encoders", [])
         models.loras = data.get("loras", [])
         models.upscalers = data.get("upscalers", [])
         models.resources = data.get("resources", {})
@@ -421,6 +423,12 @@ class Client(ABC):
 
     async def translate(self, text: str, lang: str) -> str:
         return text
+
+    async def generate_text(
+        self, text_encoder: str, clip_type: str, prompt: str, system_prompt: str, seed: int = 0
+    ) -> str:
+        """Run a language model (text encoder) on the server and return the generated text."""
+        raise RuntimeError(_("This server cannot generate text"))
 
     async def disconnect(self):
         return

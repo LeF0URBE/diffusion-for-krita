@@ -145,6 +145,13 @@ class ServerlessComfyClient(ComfyClient):
     async def _check_websocket(self):
         pass  # messages arrive with each workflow job
 
+    async def generate_text(
+        self, text_encoder: str, clip_type: str, prompt: str, system_prompt: str, seed: int = 0
+    ):
+        raise RuntimeError(
+            _("Runpod serverless can't generate text. Use an OpenAI-compatible server instead.")
+        )
+
     async def _get(self, op: str, timeout: float | None = 60):
         return await self._http("GET", op)
 

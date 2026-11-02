@@ -49,6 +49,7 @@ from ..qt.QtWidgets import (
 from ..settings import (
     ImageFileFormat,
     PerformancePreset,
+    PromptEnhancer,
     RunpodMode,
     RunpodStorage,
     ServerMode,
@@ -64,6 +65,7 @@ from .settings_widgets import (
     SliderSetting,
     SpinBoxSetting,
     SwitchSetting,
+    TextSetting,
 )
 from .style import StylePresets
 from .theme import add_header, green, grey, logo, prompt_max_line_count, red, yellow
@@ -917,6 +919,19 @@ class InterfaceSettings(SettingsTab):
         S = Settings
         self.add("language", ComboBoxSetting(S._language, parent=self))
         self.add("prompt_translation", ComboBoxSetting(S._prompt_translation, parent=self))
+        self.add("prompt_enhancer", ComboBoxSetting(S._prompt_enhancer, parent=self))
+        self.add("prompt_enhancer_url", TextSetting(S._prompt_enhancer_url, parent=self))
+        self.add("prompt_enhancer_model", TextSetting(S._prompt_enhancer_model, parent=self))
+        self.add("prompt_enhancer_api_key", TextSetting(S._prompt_enhancer_api_key, parent=self))
+        self.add(
+            "prompt_enhancer_instructions",
+            TextSetting(S._prompt_enhancer_instructions, parent=self),
+        )
+        api_key = cast(TextSetting, self._widgets["prompt_enhancer_api_key"])
+        api_key.set_password_mode()
+        for w in ["prompt_enhancer_url", "prompt_enhancer_model", "prompt_enhancer_api_key"]:
+            self._widgets[w].indent = 1
+        self._widgets["prompt_enhancer"].value_changed.connect(self._update_prompt_enhancer)
         self.add(
             "prompt_line_count",
             SpinBoxSetting(S._prompt_line_count, self, 1, prompt_max_line_count),
@@ -972,6 +987,12 @@ class InterfaceSettings(SettingsTab):
     def read(self):
         super().read()
         self._update_image_format_widgets()
+        self._update_prompt_enhancer()
+
+    def _update_prompt_enhancer(self):
+        is_openai = self._widgets["prompt_enhancer"].value is PromptEnhancer.openai
+        for w in ["prompt_enhancer_url", "prompt_enhancer_model", "prompt_enhancer_api_key"]:
+            self._widgets[w].setVisible(is_openai)
 
     def _tag_files(self) -> list[str]:
         plugin_tags_path = util.plugin_dir / "tags"

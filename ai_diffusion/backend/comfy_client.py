@@ -153,6 +153,7 @@ class ComfyClient(Client):
         self._supported_archs: dict[Arch, list[ResourceId]] = {}
         self._messages: asyncio.Queue[ClientMessage] = asyncio.Queue()
         self._queue: ClientJobQueue[JobInfo] = ClientJobQueue()
+        self._side_prompts: set[str] = set()  # prompts outside the job queue, eg. text generation
         self._is_connected = False
 
         self._requests.add_header("ngrok-skip-browser-warning", "69420")
@@ -365,6 +366,9 @@ class ComfyClient(Client):
 
             elif isinstance(msg, str):
                 msg = json.loads(msg)
+                data = msg.get("data")
+                if isinstance(data, dict) and data.get("prompt_id") in self._side_prompts:
+                    continue
 
                 if msg["type"] == "status":
                     await self._report(ClientEvent.connected, "")
@@ -530,6 +534,10 @@ class ComfyClient(Client):
             models.checkpoints.update(parse_model_info(diffusion_models, FileFormat.diffusion))
 
         models.vae = nodes.options("VAELoader", "vae_name")
+        text_encoders = nodes.options("CLIPLoader", "clip_name")
+        if "CLIPLoaderGGUF" in nodes:
+            text_encoders += nodes.options("CLIPLoaderGGUF", "clip_name")
+        models.text_encoders = sorted(set(text_encoders))
         models.loras = nodes.options("LoraLoader", "lora_name")
 
         if "UnetLoaderGGUF" in nodes:
@@ -573,6 +581,60 @@ class ComfyClient(Client):
         except NetworkError as e:
             log.error(f"Could not translate text: {e!s}")
             return text
+
+    async def generate_text(
+        self, text_encoder: str, clip_type: str, prompt: str, system_prompt: str, seed: int = 0
+    ):
+        if "TextGenerate" not in self.models.node_inputs:
+            raise RuntimeError(_("ComfyUI is too old: the TextGenerate node is missing"))
+        loader = "CLIPLoaderGGUF" if text_encoder.endswith(".gguf") else "CLIPLoader"
+        workflow = {
+            "1": {"class_type": loader, "inputs": {"clip_name": text_encoder, "type": clip_type}},
+            "2": {
+                "class_type": "TextGenerate",
+                "inputs": {
+                    "clip": ["1", 0],
+                    "prompt": prompt,
+                    "max_length": 512,
+                    "sampling_mode": "on",
+                    "sampling_mode.temperature": 0.7,
+                    "sampling_mode.top_k": 64,
+                    "sampling_mode.top_p": 0.95,
+                    "sampling_mode.min_p": 0.05,
+                    "sampling_mode.repetition_penalty": 1.05,
+                    "sampling_mode.seed": seed,
+                    "thinking": False,
+                    "use_default_template": True,
+                    "system_prompt": system_prompt,
+                },
+            },
+            "3": {"class_type": "PreviewAny", "inputs": {"source": ["2", 0]}},
+        }
+        prompt_id = str(uuid.uuid4())
+        self._side_prompts.add(prompt_id)
+        try:
+            data = {"prompt": workflow, "client_id": self._id, "prompt_id": prompt_id}
+            await self._post("prompt", data)
+            start = time()
+            while time() - start < 600:
+                await asyncio.sleep(0.5)
+                history = await self._get(f"history/{prompt_id}")
+                if not isinstance(history, dict) or prompt_id not in history:
+                    continue
+                entry = history[prompt_id]
+                status = entry.get("status", {})
+                if status.get("status_str") == "error":
+                    for kind, msg in status.get("messages", []):
+                        if kind == "execution_error":
+                            raise RuntimeError(msg.get("exception_message", "execution error"))
+                    raise RuntimeError("Text generation failed")
+                if not status.get("completed", False):
+                    continue
+                text = entry.get("outputs", {}).get("3", {}).get("text", [""])
+                return text[0] if isinstance(text, list) and text else str(text)
+            raise RuntimeError(_("Text generation timed out"))
+        finally:
+            self._side_prompts.discard(prompt_id)
 
     async def _subscribe_workflows(self):
         try:

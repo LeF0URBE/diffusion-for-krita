@@ -314,6 +314,50 @@ class Arch(Enum):
             case _:
                 raise ValueError(f"Unsupported architecture: {self}")
 
+    @property
+    def main_text_encoder(self):
+        """The text encoder (LLM or T5) which a style can replace with a file of its choice."""
+        return self.text_encoders[-1]
+
+    @property
+    def supports_text_encoder_override(self):
+        return not (self.is_sdxl_like or self in [Arch.sd15, Arch.sd3])
+
+    @property
+    def clip_loader_type(self) -> str | None:
+        """CLIPLoader type for architectures with a single text encoder."""
+        match self:
+            case Arch.sd15:
+                return "stable_diffusion"
+            case Arch.flux2_4b | Arch.flux2_9b | Arch.ernie:
+                return "flux2"
+            case Arch.chroma:
+                return "chroma"
+            case Arch.qwen | Arch.qwen_e | Arch.qwen_e_p | Arch.qwen_l | Arch.qwen2:
+                return "qwen_image"
+            case Arch.anima:
+                return "omnigen2"
+            case Arch.zimage:
+                return "lumina2"
+            case Arch.krea2:
+                return "krea2"
+            case Arch.moss:
+                return "moss_image"
+            case Arch.fibo2 | Arch.fibo2_e:
+                return "fibo2"
+            case Arch.h3_e:
+                return "minimax"
+        return None
+
+    @property
+    def can_generate_text(self):
+        """Whether the text encoder is an LLM which ComfyUI's TextGenerate node can run."""
+        return self.supports_text_encoder_override and self not in [
+            Arch.flux,
+            Arch.flux_k,
+            Arch.chroma,
+        ]
+
     @staticmethod
     def list():
         return [

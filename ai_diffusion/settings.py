@@ -51,6 +51,11 @@ class ServerBackend(Enum):
             return ServerBackend.cuda
 
 
+class PromptEnhancer(Enum):
+    comfy = _("ComfyUI (text encoder of the style)")
+    openai = _("OpenAI-compatible server")
+
+
 class GenerationFinishedAction(Enum):
     none = _("Do Nothing")
     preview = _("Preview")
@@ -331,6 +336,39 @@ class Settings(QObject):
         _("Prompt Translation"),
         "",
         _("Translate text prompts from the selected language to English"),
+    )
+
+    prompt_enhancer: PromptEnhancer
+    _prompt_enhancer = Setting(
+        _("Improve Prompt"),
+        PromptEnhancer.comfy,
+        _(
+            "Language model used by the Improve Prompt button. ComfyUI runs the style's own text encoder (Qwen and Gemma based models only)."
+        ),
+    )
+
+    prompt_enhancer_url: str
+    _prompt_enhancer_url = Setting(
+        _("LLM Server URL"),
+        "http://localhost:8080/v1",
+        _("Base URL of an OpenAI-compatible API (llama.cpp, Ollama, LM Studio, OpenAI...)"),
+    )
+
+    prompt_enhancer_model: str
+    _prompt_enhancer_model = Setting(
+        _("LLM Model"), "", _("Model name sent to the server. Can be empty for llama.cpp.")
+    )
+
+    prompt_enhancer_api_key: str
+    _prompt_enhancer_api_key = Setting(
+        _("LLM API Key"), "", _("Only needed for servers which require authorization")
+    )
+
+    prompt_enhancer_instructions: str
+    _prompt_enhancer_instructions = Setting(
+        _("Improve Prompt Instructions"),
+        "",
+        _("Additional instructions for the language model, eg. 'keep it short' or 'anime style'"),
     )
 
     save_image_metadata: bool

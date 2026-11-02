@@ -355,6 +355,9 @@ class TextSetting(SettingWidget):
         self._edit.textChanged.connect(self._notify_value_changed)
         self.set_widget(self._edit)
 
+    def set_password_mode(self):
+        self._edit.setEchoMode(QLineEdit.EchoMode.Password)
+
     @property
     def value(self):
         return self._edit.text()
