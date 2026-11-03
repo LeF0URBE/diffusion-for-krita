@@ -1189,6 +1189,16 @@ class ComfyWorkflow:
             height=bounds.height,
         )
 
+    def scale_to_megapixels(self, image: Output, megapixels: float, multiple=1):
+        return self.add(
+            "ImageScaleToTotalPixels",
+            1,
+            image=image,
+            upscale_method="lanczos",
+            megapixels=megapixels,
+            resolution_steps=multiple,
+        )
+
     def scale_image(self, image: Output, extent: Extent, method="lanczos"):
         return self.add(
             "ImageScale",

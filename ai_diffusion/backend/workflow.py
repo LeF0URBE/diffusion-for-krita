@@ -552,6 +552,13 @@ def encode_prompt(
         if arch is Arch.qwen2:
             positive = cond.positive.prepare(w, cond.style_prompt)
             negative = cond.negative.prepare(w) if cond.negative else ""
+            # The node keeps references at full size, which can make the sequence 40k+ tokens
+            # and sampling very slow. Scale reference layers to ~1 MP (the node's own default),
+            # the edited image keeps its size so the edit lines up with it.
+            edited = 1 if cond.edit_reference and image is not None else 0
+            ref_images = ref_images[:edited] + [
+                w.scale_to_megapixels(r, 1.0, 32) for r in ref_images[edited:]
+            ]
             prompt = w.text_encode_qwen2(clip.model, vae, ref_images, positive, negative)
             return prompt, None  # note: latent returned by this node is always noise/empty
         elif arch.is_fibo2:
