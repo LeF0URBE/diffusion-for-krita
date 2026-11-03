@@ -104,6 +104,7 @@ class Arch(Enum):
     fibo2 = "Fibo 2"
     fibo2_e = "Fibo 2 Edit"
     h3_e = "H3 Edit (experimental)"
+    ph3 = "P-H3-Image"
 
     auto = "Automatic"
     all = "All"
@@ -157,6 +158,11 @@ class Arch(Enum):
             return Arch.moss
         if string in {"fibo2", "fibo-2"} or (string == "unknown" and "fibo" in filename):
             return Arch.fibo2_e if "edit" in filename else Arch.fibo2
+        if string in {"p-h3-image", "ph3"} or (
+            string in {"unknown", "minimax-h3", "minimax_h3"}
+            and any(s in filename for s in ("p-h3-image", "p_h3_image", "ph3"))
+        ):
+            return Arch.ph3
         if string in {"minimax-h3", "minimax_h3"} or (
             string == "unknown" and any(s in filename for s in ("minimax_h3", "minimaxh3"))
         ):
@@ -235,7 +241,7 @@ class Arch(Enum):
 
     @property
     def supports_edit(self):  # includes text-to-image models that can also edit
-        return self.is_edit or self.is_flux2 or self in [Arch.qwen2, Arch.fibo2]
+        return self.is_edit or self.is_flux2 or self in [Arch.qwen2, Arch.fibo2, Arch.ph3]
 
     @property
     def is_sdxl_like(self):
@@ -259,6 +265,8 @@ class Arch(Enum):
         """Custom nodes the arch's workflows need, it is only supported if the server has them."""
         if self is Arch.h3_e:
             return ["H3ImageToImagePrepare", "H3SamplingSettings", "H3StudioEdit", "H3StudioRender"]
+        if self is Arch.ph3:  # ComfyUI 0.44+
+            return ["PH3ImageConditioning", "MiniMaxH3SigmaShift"]
         return []
 
     @property
@@ -270,7 +278,7 @@ class Arch(Enum):
                 return "moss_image"
             case Arch.fibo2 | Arch.fibo2_e:
                 return "fibo2"
-            case Arch.h3_e:
+            case Arch.h3_e | Arch.ph3:
                 return "minimax"
         return None
 
@@ -311,6 +319,8 @@ class Arch(Enum):
                 return ["qwen_3_5_9b"]
             case Arch.h3_e:
                 return ["qwen_3vl_32b_h3"]
+            case Arch.ph3:
+                return ["p_h3_image"]
             case _:
                 raise ValueError(f"Unsupported architecture: {self}")
 
@@ -345,7 +355,7 @@ class Arch(Enum):
                 return "moss_image"
             case Arch.fibo2 | Arch.fibo2_e:
                 return "fibo2"
-            case Arch.h3_e:
+            case Arch.h3_e | Arch.ph3:
                 return "minimax"
         return None
 
@@ -384,6 +394,7 @@ class Arch(Enum):
             Arch.fibo2,
             Arch.fibo2_e,
             Arch.h3_e,
+            Arch.ph3,
         ]
 
 
@@ -527,7 +538,7 @@ class ControlMode(Enum):
 
     def can_substitute_instruction(self, arch: Arch):
         """True if this control mode is covered by instruction-following edit models."""
-        if arch.is_flux2 or arch.is_fibo2 or arch is Arch.qwen2:
+        if arch.is_flux2 or arch.is_fibo2 or arch in (Arch.qwen2, Arch.ph3):
             return self in [
                 ControlMode.style,
                 ControlMode.composition,
@@ -935,6 +946,7 @@ search_paths: dict[str, list[str]] = {
     resource_id(ResourceKind.text_encoder, Arch.all, "qwen_3vl_8b"): ["qwen3vl_8b", "qwen_3vl_8b", "qwen3-vl-8b"],
     resource_id(ResourceKind.text_encoder, Arch.all, "qwen_3_5_9b"): ["qwen3.5_9b", "qwen_3.5_9b", "qwen3.5-9b", "qwen35_9b"],
     resource_id(ResourceKind.text_encoder, Arch.all, "qwen_3vl_32b_h3"): ["qwen3vl_32b_minimax_h3"],
+    resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_image"): ["p-h3-image_text_encoder"],
     resource_id(ResourceKind.vae, Arch.sd15, "default"): ["vae-ft-mse-840000-ema"],
     resource_id(ResourceKind.vae, Arch.sdxl, "default"): ["sdxl_vae"],
     resource_id(ResourceKind.vae, Arch.illu, "default"): ["sdxl_vae"],
@@ -958,6 +970,7 @@ search_paths: dict[str, list[str]] = {
     resource_id(ResourceKind.vae, Arch.fibo2, "default"): ["flux2"],
     resource_id(ResourceKind.vae, Arch.fibo2_e, "default"): ["flux2"],
     resource_id(ResourceKind.vae, Arch.h3_e, "default"): ["minimax_h3_video_vae"],
+    resource_id(ResourceKind.vae, Arch.ph3, "default"): ["p-h3-image_vae"],
 }
 # fmt: on
 
@@ -1005,6 +1018,8 @@ required_resource_ids = {
     ResourceId(ResourceKind.vae, Arch.fibo2_e, "default"),
     ResourceId(ResourceKind.text_encoder, Arch.h3_e, "qwen_3vl_32b_h3"),
     ResourceId(ResourceKind.vae, Arch.h3_e, "default"),
+    ResourceId(ResourceKind.text_encoder, Arch.ph3, "p_h3_image"),
+    ResourceId(ResourceKind.vae, Arch.ph3, "default"),
 }
 
 recommended_resource_ids = [

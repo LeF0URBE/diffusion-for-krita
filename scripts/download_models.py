@@ -63,6 +63,7 @@ def list_models(
     moss=False,
     fibo2=False,
     h3=False,
+    ph3=False,
     upscalers=False,
     checkpoints=None,
     controlnet=False,
@@ -107,9 +108,12 @@ def list_models(
         versions.extend((Arch.fibo2, Arch.fibo2_e))
     if h3:  # experimental, not part of --all
         versions.append(Arch.h3_e)
+    if ph3:  # very large, not part of --all
+        versions.append(Arch.ph3)
 
     def include_checkpoint(m: ModelResource):
-        return (all and m.arch is not Arch.h3_e) or m.id.identifier in checkpoints
+        large = (Arch.h3_e, Arch.ph3)
+        return (all and m.arch not in large) or m.id.identifier in checkpoints
 
     models: set[ModelResource] = set()
     models.update([m for m in default_checkpoints if include_checkpoint(m)])
@@ -319,6 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("--moss", action="store_true", help="[Workload] everything needed to run MOSS-Image (no checkpoints)")
     parser.add_argument("--fibo2", action="store_true", help="[Workload] everything needed to run Fibo 2 and Fibo 2 Edit (no checkpoints)")
     parser.add_argument("--h3", action="store_true", help="[Workload] everything needed to run H3 Edit, experimental (no checkpoints)")
+    parser.add_argument("--ph3", action="store_true", help="[Workload] everything needed to run P-H3-Image (8 GB; with --checkpoints +21 GB)")
     parser.add_argument("--checkpoints", action="store_true", dest="checkpoints", help="download all checkpoints for selected workloads")
     parser.add_argument("--controlnet", action="store_true", help="download ControlNet models for selected workloads")
     parser.add_argument("--checkpoint", action="append", choices=checkpoint_names, dest="checkpoint_list", help="download a specific checkpoint (can specify multiple times)")
@@ -352,6 +357,7 @@ if __name__ == "__main__":
         "moss": (Arch.moss,),
         "fibo2": (Arch.fibo2, Arch.fibo2_e),
         "h3": (Arch.h3_e,),
+        "ph3": (Arch.ph3,),
     }
     for name, archs in extra_workloads.items():
         if args.checkpoints and getattr(args, name):
@@ -377,6 +383,7 @@ if __name__ == "__main__":
         moss=args.moss,
         fibo2=args.fibo2,
         h3=args.h3,
+        ph3=args.ph3,
         upscalers=args.upscalers,
         checkpoints=checkpoints,
         controlnet=args.controlnet,

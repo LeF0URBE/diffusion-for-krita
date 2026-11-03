@@ -348,6 +348,30 @@
           "sha256": "7098acf3ee75028fd9fcd948f50fcc8d995057fabb76f86bd3ca2c0ffc58e409"
         }
       ]
+    },
+    {
+      "id": "text_encoder-p_h3_image-ph3",
+      "name": "P-H3-Image Text Encoder [int8]",
+      "files": [
+        {
+          "path": "models/text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors",
+          "url": "https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors",
+          "sha256": "fb42c9ff0597e61729475d0b48b69b591ffe06d0b442a79dde22b14fadbe1c0f"
+        }
+      ],
+      "requirements": "cuda"
+    },
+    {
+      "id": "vae-default-ph3",
+      "name": "P-H3-Image VAE [int8]",
+      "files": [
+        {
+          "path": "models/vae/p-h3-image_vae_int8_convrot.safetensors",
+          "url": "https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/vae/p-h3-image_vae_int8_convrot.safetensors",
+          "sha256": "583e0d43354b6b833aa9a0815a5fac831b1ef6d0c19a7eaa0616980a3dab5ffe"
+        }
+      ],
+      "requirements": "cuda"
     }
   ],
   "checkpoints": [
@@ -598,6 +622,18 @@
           "path": "models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
           "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
           "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+        }
+      ],
+      "requirements": "cuda"
+    },
+    {
+      "id": "checkpoint-p_h3_image-ph3",
+      "name": "P-H3-Image [int8]",
+      "files": [
+        {
+          "path": "models/diffusion_models/p-h3-image_int8_convrot.safetensors",
+          "url": "https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/diffusion_models/p-h3-image_int8_convrot.safetensors",
+          "sha256": "b156fd4fe9d169e58cb2b07f9594ec740ff8f0e052d62b009e6dd034de5865e7"
         }
       ],
       "requirements": "cuda"

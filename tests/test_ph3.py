@@ -1,0 +1,190 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from ai_diffusion.backend import workflow
+from ai_diffusion.backend.api import ConditioningInput, ControlInput, WorkflowKind
+from ai_diffusion.backend.client import CheckpointInfo, ClientModels
+from ai_diffusion.backend.comfy_client import ComfyClient
+from ai_diffusion.backend.comfy_workflow import PH3_SIGMAS, ComfyObjectInfo
+from ai_diffusion.backend.resolution import prepare_diffusion_input
+from ai_diffusion.backend.resources import ControlMode, ResourceKind, UpscalerName, resource_id
+from ai_diffusion.files import FileCollection, FileLibrary
+from ai_diffusion.image import Bounds, Extent, Image, Mask
+from ai_diffusion.settings import PerformanceSettings
+from ai_diffusion.style import Arch, SamplerPresets, Style
+
+checkpoint = "p-h3-image_int8_convrot.safetensors"
+text_encoder = "p-h3-image_text_encoder_int8_convrot.safetensors"
+vae = "p-h3-image_vae_int8_convrot.safetensors"
+ph3_nodes = Arch.ph3.comfy_nodes
+
+
+def test_arch_from_string():
+    # Model inspection reports MiniMax-H3 models as "unknown"
+    assert Arch.from_string("unknown", filename=checkpoint) is Arch.ph3
+    assert Arch.from_string("unknown", filename="p-h3-image_w4a8.safetensors") is Arch.ph3
+    assert Arch.from_string("minimax-h3", filename="P-H3-Image_bf16.safetensors") is Arch.ph3
+    unknown = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+    assert Arch.from_string("unknown", filename=unknown) is Arch.h3_e
+    assert Arch.ph3.supports_edit and not Arch.ph3.is_edit
+    assert Arch.ph3.clip_loader_type == "minimax"
+
+
+def node_info(nodes: list[str]):
+    info: dict[str, dict] = {n: {"input": {"required": {}}} for n in nodes}
+    info["CLIPLoader"] = {"input": {"required": {"type": [["minimax", "flux2"]]}}}
+    return ComfyObjectInfo(info)
+
+
+def client_models(nodes: list[str] = ph3_nodes):
+    models = ClientModels()
+    models.checkpoints = {
+        checkpoint: CheckpointInfo(checkpoint, Arch.ph3, workflow.FileFormat.diffusion)
+    }
+    models.node_inputs = node_info(nodes)
+    te_id = resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_image")
+    models.resources[te_id] = text_encoder
+    models.resources[resource_id(ResourceKind.vae, Arch.ph3, "default")] = vae
+    for upscaler in UpscalerName:
+        models.resources[resource_id(ResourceKind.upscaler, Arch.all, upscaler)] = upscaler.value
+    return models
+
+
+def test_workload_requires_ph3_nodes():
+    def missing_for_arch(models: ClientModels):
+        client = SimpleNamespace(models=models)
+        missing = ComfyClient._check_workload(client, Arch.ph3)  # type: ignore
+        return [m for m in missing if m.arch is Arch.ph3]
+
+    assert missing_for_arch(client_models()) == []
+    missing = missing_for_arch(client_models(nodes=["MiniMaxH3SigmaShift"]))
+    assert {m.identifier for m in missing} == {"PH3ImageConditioning"}
+
+
+def create(
+    kind: WorkflowKind,
+    image: Image | Extent,
+    cond: ConditioningInput,
+    batch=1,
+    mask: Mask | None = None,
+    edit=True,
+):
+    models = client_models()
+    style = Style(Path("default.json"))
+    style.checkpoints = [checkpoint]
+    style.sampler = "P-H3 - 8 steps"
+    style.sampler_steps = 8
+    style.cfg_scale = 1.0
+    files = FileLibrary(FileCollection(), FileCollection())
+    perf = PerformanceSettings()
+    cond.edit_reference = edit
+    inpaint = None
+    if mask is not None:
+        inpaint = workflow.detect_inpaint(workflow.InpaintMode.fill, mask.bounds, Arch.ph3, cond, 1)
+    job = workflow.prepare(
+        kind, image, cond, style, 7, models, files, perf, mask=mask, strength=1.0, inpaint=inpaint
+    )
+    job.batch_count = batch
+    w = workflow.create(job, models)
+    return {id: node for id, node in w.root.items()}
+
+
+def find(nodes: dict, class_type: str):
+    return [n for n in nodes.values() if n["class_type"] == class_type]
+
+
+def check_sampling(nodes: dict):
+    assert find(nodes, "CLIPLoader")[0]["inputs"]["type"] == "minimax"
+    assert find(nodes, "CLIPLoader")[0]["inputs"]["clip_name"] == text_encoder
+    assert find(nodes, "UNETLoader")[0]["inputs"]["unet_name"] == checkpoint
+    shift = find(nodes, "MiniMaxH3SigmaShift")[0]["inputs"]
+    assert shift["shift_video"] == pytest.approx(1.0)
+    assert shift["shift_audio"] == pytest.approx(1.0)
+    assert find(nodes, "ManualSigmas")[0]["inputs"]["sigmas"] == PH3_SIGMAS
+    assert find(nodes, "KSamplerSelect")[0]["inputs"]["sampler_name"] == "euler"
+    assert len(find(nodes, "CFGGuider")) == 0 and len(find(nodes, "BasicGuider")) == 1
+    assert len(find(nodes, "EmptyLatentImage")) == 0  # the latent comes from the conditioning
+
+
+def test_text_to_image():
+    nodes = create(WorkflowKind.generate, Extent(1536, 1536), ConditioningInput("a red fox"))
+    check_sampling(nodes)
+    cond = find(nodes, "PH3ImageConditioning")[0]["inputs"]
+    assert cond["prompt"] == "a red fox"
+    assert cond["width"] == 1536 and cond["height"] == 1536
+    assert not any(k.startswith("images.") for k in cond)
+
+
+def test_text_to_image_batch():
+    nodes = create(WorkflowKind.generate, Extent(1024, 1024), ConditioningInput("a fox"), batch=2)
+    seeds = {n["inputs"]["noise_seed"] for n in find(nodes, "RandomNoise")}
+    assert len(seeds) == 2
+    assert len(find(nodes, "PH3ImageConditioning")) == 1
+    assert len(find(nodes, "VAEDecode")) == 2 and len(find(nodes, "ImageBatch")) == 1
+
+
+def test_edit_with_reference():
+    image = Image.create(Extent(1024, 768))
+    cond = ConditioningInput("put the hat from <Picture 2> on the person")
+    cond.control = [ControlInput(ControlMode.reference, Image.create(Extent(512, 512)))]
+    nodes = create(WorkflowKind.refine, image, cond)
+    check_sampling(nodes)
+    inputs = find(nodes, "PH3ImageConditioning")[0]["inputs"]
+    assert "images.image_1" in inputs and "images.image_2" in inputs
+    assert inputs["width"] % 32 == 0 and inputs["height"] % 32 == 0
+    assert inputs["prompt"].endswith("put the hat from <Picture 2> on the person")
+
+
+def test_refine_without_edit_mode_still_edits():
+    image = Image.create(Extent(1024, 1024))
+    nodes = create(WorkflowKind.refine, image, ConditioningInput("make it night"), edit=False)
+    assert "images.image_1" in find(nodes, "PH3ImageConditioning")[0]["inputs"]
+    assert len(find(nodes, "VAEEncode")) == 0
+
+
+def test_selection_edit():
+    mask = Mask.rectangle(Bounds(256, 256, 512, 512), Bounds(128, 128, 768, 768))
+    image = Image.create(Extent(768, 768))
+    for kind in (WorkflowKind.refine_region, WorkflowKind.inpaint):
+        nodes = create(kind, image, ConditioningInput("a cat"), mask=mask)
+        check_sampling(nodes)
+        assert "images.image_1" in find(nodes, "PH3ImageConditioning")[0]["inputs"]
+        assert len(find(nodes, "DifferentialDiffusion")) == 0
+
+
+def test_large_canvas_single_pass():
+    style = Style(Path("default.json"))
+    perf = PerformanceSettings()
+    scaled, _, _ = prepare_diffusion_input(Extent(4096, 4096), None, Arch.ph3, style, perf)
+    assert scaled.initial == scaled.desired  # no second refine pass
+    assert scaled.initial.pixel_count <= 2048**2
+    assert scaled.initial.width % 32 == 0 and scaled.initial.height % 32 == 0
+    assert scaled.target == Extent(4096, 4096)
+
+
+def test_sampler_preset():
+    preset = SamplerPresets.instance()["P-H3 - 8 steps"]
+    assert preset.scheduler == "p_h3" and preset.steps == 8 and preset.cfg == pytest.approx(1.0)
+    assert PH3_SIGMAS.count(",") == 8  # 8 steps
+
+
+def test_download_workload():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    import download_models as dm
+
+    from ai_diffusion.backend.resources import ModelRequirements
+
+    names = {m.name for m in dm.list_models(ph3=True, backend=ModelRequirements.cuda)}
+    assert {"P-H3-Image Text Encoder [int8]", "P-H3-Image VAE [int8]"} <= names
+    assert "P-H3-Image [int8]" not in names
+    everything = dm.list_models(all=True, backend=ModelRequirements.cuda)
+    assert "P-H3-Image [int8]" not in {m.name for m in everything}
+
+
+@pytest.mark.parametrize("arch", [Arch.ph3])
+def test_text_encoder(arch: Arch):
+    assert arch.text_encoders == ["p_h3_image"]

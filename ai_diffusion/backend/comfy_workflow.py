@@ -25,6 +25,10 @@ class Output(NamedTuple):
 
 
 T = TypeVar("T")
+
+# Distilled 8-step sigma grid of P-H3-Image (from its reference ComfyUI workflows)
+PH3_SIGMAS = "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+
 Output2 = tuple[Output, Output]
 Output3 = tuple[Output, Output, Output]
 Output4 = tuple[Output, Output, Output, Output]
@@ -425,6 +429,9 @@ class ComfyWorkflow:
                 mu=0.0,
                 beta=0.5,
             )
+        elif scheduler == "p_h3":
+            # P-H3-Image is distilled to this fixed 8-step grid, the step count is ignored
+            return self.add("ManualSigmas", 1, sigmas=PH3_SIGMAS)
         elif scheduler == "flux2":
             extent = extent or Extent(1024, 1024)
             return self.add(
@@ -739,6 +746,28 @@ class ComfyWorkflow:
             args[f"images.image_{i + 1}"] = image
         positive, negative, _ = self.add("TextEncodeFibo2", 3, **args)
         return ConditioningOutput(positive, negative)
+
+    # P-H3-Image (native ComfyUI nodes)
+
+    def minimax_h3_sigma_shift(self, model: Output, video=1.0, audio=1.0):
+        return self.add("MiniMaxH3SigmaShift", 1, model=model, shift_video=video, shift_audio=audio)
+
+    def ph3_image_conditioning(
+        self, clip: Output, vae: Output, prompt: str | Output, extent: Extent, images: list[Output]
+    ):
+        """Text-to-image, or with images an edit of the first one (<Picture 1>) with the rest as
+        references. Returns the conditioning and the (audio+video) latent to sample."""
+        assert len(images) <= 9, "P-H3-Image supports a maximum of 9 input images"
+        args = {
+            "clip": clip,
+            "vae": vae,
+            "prompt": prompt,
+            "width": extent.width,
+            "height": extent.height,
+        }
+        for i, image in enumerate(images):
+            args[f"images.image_{i + 1}"] = image
+        return self.add("PH3ImageConditioning", 2, **args)
 
     # MiniMax H3 Image Studio nodes
 

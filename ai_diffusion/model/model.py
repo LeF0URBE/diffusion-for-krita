@@ -267,7 +267,11 @@ class DocumentModel(QObject, ObservableProperties):
         seed = self.seed if self.fixed_seed else workflow.generate_seed()
         ref_layers: dict[str, int] | None = None
         if not dryrun:
-            conditioning, ref_layers = self._add_reference_layers(conditioning)
+            # P-H3-Image always edits the canvas as <Picture 1> when it gets one
+            canvas_input = arch is Arch.ph3 and (
+                mask is not None or workflow_kind is WorkflowKind.refine
+            )
+            conditioning, ref_layers = self._add_reference_layers(conditioning, canvas_input)
 
         original_conditioning = conditioning
         inpaint_instruction = inpaint_mode if is_one(strength) else None
@@ -945,7 +949,7 @@ class DocumentModel(QObject, ObservableProperties):
             return InpaintMode.fill
         return self.inpaint.mode
 
-    def _add_reference_layers(self, cond: ConditioningInput):
+    def _add_reference_layers(self, cond: ConditioningInput, canvas_input=False):
         def add_refs(control: list[ControlInput], layer_names: dict[str, int]):
             layers_sorted = sorted(layer_names.items(), key=lambda x: x[1])
             for layer_name, __ in layers_sorted:
@@ -955,7 +959,8 @@ class DocumentModel(QObject, ObservableProperties):
                 ctrl = ControlLayer(self, ControlMode.reference, uid, 0)
                 control.append(ctrl.to_api())
 
-        cond.edit_reference = self.is_editing
+        # reference layers are numbered after the canvas image if the model gets it
+        cond.edit_reference = self.is_editing or canvas_input
         layers = extract_layers(cond)
         add_refs(cond.control, layers)
 
@@ -964,6 +969,7 @@ class DocumentModel(QObject, ObservableProperties):
             add_refs(region.control, region_layers)
             layers.update(region_layers)
 
+        cond.edit_reference = self.is_editing
         return cond, layers
 
     def _performance_settings(self, client: Client):

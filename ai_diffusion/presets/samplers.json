@@ -125,5 +125,12 @@
         "steps": 20,
         "minimum_steps": 4,
         "cfg": 1.0
+    },
+    "P-H3 - 8 steps": {
+        "sampler": "euler",
+        "scheduler": "p_h3",
+        "steps": 8,
+        "minimum_steps": 8,
+        "cfg": 1.0
     }
 }

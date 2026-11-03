@@ -978,6 +978,9 @@ def generate(
     misc: MiscParams,
     models: ModelDict,
 ):
+    if models.arch is Arch.ph3:
+        return ph3_generate(w, checkpoint, extent, cond, sampling, misc, models)
+
     model, clip, vae = load_checkpoint_with_lora(w, checkpoint, models.all)
     model = apply_ip_adapter(w, model, cond.control, models)
     model_orig = copy(model)
@@ -1114,6 +1117,10 @@ def inpaint(
     misc: MiscParams,
     models: ModelDict,
 ):
+    if models.arch is Arch.ph3:  # an edit of the area around the selection, composited by mask
+        args = (w, images, checkpoint, cond, sampling, params, misc, models)
+        return h3_refine_region(*args)
+
     target_bounds = params.target_bounds
     extent = ScaledExtent.from_input(images.extent)  # for initial generation with large context
 
@@ -1299,6 +1306,57 @@ def h3_edit(
     return w.scale_image(out_image, extent)  # the nodes may round the size
 
 
+def ph3_sample(
+    w: ComfyWorkflow,
+    checkpoint: CheckpointInput,
+    cond: Conditioning,
+    sampling: SamplingInput,
+    image: Output | None,
+    extent: Extent,
+    misc: MiscParams,
+    models: ModelDict,
+):
+    """P-H3-Image: text-to-image without `image`, otherwise an edit of `image` (<Picture 1>), with
+    reference images after it. The model is distilled to a fixed 8-step grid without CFG, so it
+    always samples from pure noise: denoise strength does not apply, edits keep the image instead."""
+    model, clip, vae = load_checkpoint_with_lora(w, checkpoint, models.all)
+    model = w.minimax_h3_sigma_shift(model)
+    images = [image] if image is not None else []
+    images += [c.image.load(w) for c in cond.all_control if c.mode.is_ip_adapter]
+    prompt = cond.positive.prepare(w, cond.style_prompt)
+    positive, latent = w.ph3_image_conditioning(clip.model, vae, prompt, extent, images[:9])
+    guider = w.basic_guider(model, positive)
+    sampler = w.sampler_select(sampling.sampler)
+    steps = sampling.actual_steps
+    sigmas = w.scheduler_sigmas(model, sampling.scheduler, steps, models.arch, extent)
+    results: list[Output] = []
+    for i in range(misc.batch_count):
+        out_latent = w.h3_sample(guider, sampler, sigmas, latent, sampling.seed + i)
+        results.append(w.vae_decode(vae, out_latent))
+    w.sample_count += steps * misc.batch_count
+
+    out_image = results[0]
+    for result in results[1:]:
+        out_image = w.batch_image(out_image, result)
+    return w.scale_image(out_image, extent)  # the node rounds the size to a multiple of 32
+
+
+def ph3_generate(
+    w: ComfyWorkflow,
+    checkpoint: CheckpointInput,
+    extent: ScaledExtent,
+    cond: Conditioning,
+    sampling: SamplingInput,
+    misc: MiscParams,
+    models: ModelDict,
+):
+    out_image = ph3_sample(w, checkpoint, cond, sampling, None, extent.initial, misc, models)
+    out_image = w.nsfw_filter(out_image, sensitivity=misc.nsfw_filter)
+    out_image = scale_to_target(extent, w, out_image, models)
+    w.send_image(out_image)
+    return w
+
+
 def h3_refine(
     w: ComfyWorkflow,
     image: Image,
@@ -1309,9 +1367,10 @@ def h3_refine(
     misc: MiscParams,
     models: ModelDict,
 ):
+    edit = ph3_sample if models.arch is Arch.ph3 else h3_edit
     in_image = w.load_image(image)
     in_image = scale_to_initial(extent, w, in_image, models)
-    out_image = h3_edit(w, checkpoint, cond, sampling, in_image, extent.initial, misc, models)
+    out_image = edit(w, checkpoint, cond, sampling, in_image, extent.initial, misc, models)
     out_image = w.nsfw_filter(out_image, sensitivity=misc.nsfw_filter)
     out_image = scale_to_target(extent, w, out_image, models)
     w.send_image(out_image)
@@ -1335,7 +1394,8 @@ def h3_refine_region(
     in_mask = apply_grow_feather(w, in_mask, inpaint)
     initial_mask = scale_to_initial(extent, w, in_mask, models, is_mask=True)
 
-    out_image = h3_edit(w, checkpoint, cond, sampling, in_image, extent.initial, misc, models)
+    edit = ph3_sample if models.arch is Arch.ph3 else h3_edit
+    out_image = edit(w, checkpoint, cond, sampling, in_image, extent.initial, misc, models)
     out_image = w.color_match(out_image, in_image, initial_mask, misc.color_match)
     out_image = w.nsfw_filter(out_image, sensitivity=misc.nsfw_filter)
     out_image = scale_to_target(extent, w, out_image, models)
@@ -1358,7 +1418,7 @@ def refine(
     misc: MiscParams,
     models: ModelDict,
 ):
-    if models.arch is Arch.h3_e:
+    if models.arch in (Arch.h3_e, Arch.ph3):
         return h3_refine(w, image, extent, checkpoint, cond, sampling, misc, models)
 
     model, clip, vae = load_checkpoint_with_lora(w, checkpoint, models.all)
@@ -1392,7 +1452,7 @@ def refine_region(
     misc: MiscParams,
     models: ModelDict,
 ):
-    if models.arch is Arch.h3_e:
+    if models.arch in (Arch.h3_e, Arch.ph3):
         args = (w, images, checkpoint, cond, sampling, inpaint, misc, models)
         return h3_refine_region(*args)
 
@@ -1725,6 +1785,7 @@ _layer_replace = {
     Arch.fibo2: "<image_{}>",
     Arch.fibo2_e: "<image_{}>",
     Arch.h3_e: "<Picture {}>",
+    Arch.ph3: "<Picture {}>",
 }
 _control_instructions = {
     ControlMode.style: "Apply the style from {}.",
