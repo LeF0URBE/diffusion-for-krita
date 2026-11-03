@@ -13,7 +13,7 @@ from typing import Any, NamedTuple
 version = "1.54.0"
 
 comfy_url = "https://github.com/comfyanonymous/ComfyUI"
-comfy_version = "426f5eea52a7ece1dd599fff4cb6cd1f352ddd24"
+comfy_version = "2c75dc1b379a59e0880619d029607af5169a62ef"
 
 
 class CustomNode(NamedTuple):
