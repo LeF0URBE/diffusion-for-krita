@@ -687,6 +687,9 @@ class StylePresets(SettingsTab):
         self._text_encoder = add(
             "text_encoder", ComboBoxSetting(StyleSettings.text_encoder, parent=self)
         )
+        self._upsampler = add(
+            "prompt_upsampler", SwitchSetting(StyleSettings.prompt_upsampler, parent=self)
+        )
 
         self._clip_skip = self._style_widgets["clip_skip"] = SpinBoxSetting(
             StyleSettings.clip_skip, self, 0, 12
@@ -717,6 +720,7 @@ class StylePresets(SettingsTab):
             self._arch_select,
             self._vae,
             self._text_encoder,
+            self._upsampler,
             self._clip_skip,
             self._resolution_spin,
             self._zsnr,
@@ -943,6 +947,8 @@ class StylePresets(SettingsTab):
             valid_archs = (Arch.auto, Arch.qwen, Arch.qwen_e, Arch.qwen_e_p, Arch.qwen_l)
         elif arch.is_flux2:
             valid_archs = (Arch.auto, Arch.flux2_4b, Arch.flux2_9b)
+        elif arch in (Arch.h3_e, Arch.ph3):
+            valid_archs = (Arch.auto, Arch.h3_e, Arch.ph3)
         else:
             valid_archs = (Arch.auto, arch)
         with SignalBlocker(self._arch_select):
@@ -952,6 +958,7 @@ class StylePresets(SettingsTab):
         self._clip_skip_check.setEnabled(arch.supports_clip_skip)
         self._clip_skip.enabled = arch.supports_clip_skip and self.current_style.clip_skip > 0
         self._text_encoder.enabled = arch.supports_text_encoder_override
+        self._upsampler.enabled = arch is Arch.ph3
         self._zsnr.enabled = arch.supports_attention_guidance
         self._sag.enabled = arch.supports_attention_guidance
 

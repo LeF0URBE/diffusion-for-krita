@@ -134,6 +134,8 @@ def list_models(
             ResourceKind.model_patch,
         ]
         models.update([m for m in optional_models if m.kind in kinds and m.arch in versions])
+    if ph3:  # prompt upsampler, and the LoRA to run P-H3-Image on MiniMax-H3 FL2VA
+        models.update([m for m in optional_models if m.arch is Arch.ph3])
     if flux or all:
         lora = ResourceKind.lora
         models.update([m for m in optional_models if m.kind is lora and m.arch is Arch.flux])
@@ -323,7 +325,7 @@ if __name__ == "__main__":
     parser.add_argument("--moss", action="store_true", help="[Workload] everything needed to run MOSS-Image (no checkpoints)")
     parser.add_argument("--fibo2", action="store_true", help="[Workload] everything needed to run Fibo 2 and Fibo 2 Edit (no checkpoints)")
     parser.add_argument("--h3", action="store_true", help="[Workload] everything needed to run H3 Edit, experimental (no checkpoints)")
-    parser.add_argument("--ph3", action="store_true", help="[Workload] everything needed to run P-H3-Image (8 GB; with --checkpoints +21 GB)")
+    parser.add_argument("--ph3", action="store_true", help="[Workload] everything needed to run P-H3-Image (20 GB incl. prompt upsampler and LoRA; with --checkpoints +21 GB)")
     parser.add_argument("--checkpoints", action="store_true", dest="checkpoints", help="download all checkpoints for selected workloads")
     parser.add_argument("--controlnet", action="store_true", help="download ControlNet models for selected workloads")
     parser.add_argument("--checkpoint", action="append", choices=checkpoint_names, dest="checkpoint_list", help="download a specific checkpoint (can specify multiple times)")

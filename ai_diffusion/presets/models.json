@@ -978,6 +978,29 @@
           "sha256": "880bf452b060abfcbccedee56f8d3dbf8aed2cb0311b599210361b414fc8f2fd"
         }
       ]
+    },
+    {
+      "id": "text_encoder-p_h3_upsampler-ph3",
+      "name": "P-H3-Image Prompt Upsampler [int8]",
+      "files": [
+        {
+          "path": "models/text_encoders/p-h3-image_prompt_upsampler_int8_convrot.safetensors",
+          "url": "https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/text_encoders/p-h3-image_prompt_upsampler_int8_convrot.safetensors",
+          "sha256": "281f9c90230cec3c2029d0761128868c21d1bc5b15fb742bde5a051119ad2f4e"
+        }
+      ],
+      "requirements": "cuda"
+    },
+    {
+      "id": "lora-p_h3_image-ph3",
+      "name": "P-H3-Image LoRA (for MiniMax-H3 FL2VA)",
+      "files": [
+        {
+          "path": "models/loras/p-h3-image_lora_bf16.safetensors",
+          "url": "https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/loras/p-h3-image_lora_bf16.safetensors",
+          "sha256": "0e9013ae2873e3415dcb7bb59a9677293bdbdb6f663e138a79bb9bdced00ea61"
+        }
+      ]
     }
   ],
   "prefetch": [

@@ -822,6 +822,7 @@ def _find_text_encoder_models(model_list: Sequence[str]):
     kind = ResourceKind.text_encoder
     # every text encoder some architecture uses, in a stable order
     tes = list(dict.fromkeys(te for arch in Arch.list() for te in arch.text_encoders))
+    tes.append("p_h3_upsampler")  # optional prompt rewriter, not a text encoder of the model
     return {
         resource_id(kind, Arch.all, te): _find_model(model_list, kind, Arch.all, te) for te in tes
     }

@@ -188,6 +188,7 @@ class Arch(Enum):
             or (a.is_sdxl_like and b.is_sdxl_like)
             or (a.is_flux_like and b.is_flux_like)
             or (a.is_qwen_like and b.is_qwen_like)
+            or {a, b} == {Arch.h3_e, Arch.ph3}  # P-H3-Image as a LoRA on MiniMax-H3 FL2VA
         )
 
     def matches(self, checkpoint: str):
@@ -919,6 +920,7 @@ search_paths: dict[str, list[str]] = {
     resource_id(ResourceKind.lora, Arch.flux, "turbo"): ["flux.1-turbo"],
     resource_id(ResourceKind.lora, Arch.flux_k, "turbo"): ["flux.1-turbo"],
     resource_id(ResourceKind.lora, Arch.anima, "turbo"): ["anima-turbo-lora"],
+    resource_id(ResourceKind.lora, Arch.ph3, "p_h3_image"): ["p-h3-image_lora"],
     resource_id(ResourceKind.lora, Arch.h3_e, "turbo"): ["minimax_h3_turbo_v4_step600_ema", "minimax_h3_turbo_4step_ckpt600_ema_v4"],
     resource_id(ResourceKind.lora, Arch.sd15, ControlMode.face): ["ip-adapter-faceid-plusv2_sd15_lora", "ip-adapter-faceid-plus_sd15_lora"],
     resource_id(ResourceKind.lora, Arch.sdxl, ControlMode.face): ["ip-adapter-faceid-plusv2_sdxl_lora", "ip-adapter-faceid_sdxl_lora"],
@@ -947,6 +949,7 @@ search_paths: dict[str, list[str]] = {
     resource_id(ResourceKind.text_encoder, Arch.all, "qwen_3_5_9b"): ["qwen3.5_9b", "qwen_3.5_9b", "qwen3.5-9b", "qwen35_9b"],
     resource_id(ResourceKind.text_encoder, Arch.all, "qwen_3vl_32b_h3"): ["qwen3vl_32b_minimax_h3"],
     resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_image"): ["p-h3-image_text_encoder"],
+    resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_upsampler"): ["p-h3-image_prompt_upsampler"],
     resource_id(ResourceKind.vae, Arch.sd15, "default"): ["vae-ft-mse-840000-ema"],
     resource_id(ResourceKind.vae, Arch.sdxl, "default"): ["sdxl_vae"],
     resource_id(ResourceKind.vae, Arch.illu, "default"): ["sdxl_vae"],

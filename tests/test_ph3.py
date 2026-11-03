@@ -18,6 +18,9 @@ from ai_diffusion.style import Arch, SamplerPresets, Style
 checkpoint = "p-h3-image_int8_convrot.safetensors"
 text_encoder = "p-h3-image_text_encoder_int8_convrot.safetensors"
 vae = "p-h3-image_vae_int8_convrot.safetensors"
+upsampler = "p-h3-image_prompt_upsampler_int8_convrot.safetensors"
+ph3_lora = "p-h3-image_lora_bf16.safetensors"
+h3_checkpoint = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 ph3_nodes = Arch.ph3.comfy_nodes
 
 
@@ -38,11 +41,19 @@ def node_info(nodes: list[str]):
     return ComfyObjectInfo(info)
 
 
-def client_models(nodes: list[str] = ph3_nodes):
+def client_models(nodes: list[str] = ph3_nodes, with_upsampler=False, with_lora=False):
     models = ClientModels()
     models.checkpoints = {
-        checkpoint: CheckpointInfo(checkpoint, Arch.ph3, workflow.FileFormat.diffusion)
+        checkpoint: CheckpointInfo(checkpoint, Arch.ph3, workflow.FileFormat.diffusion),
+        h3_checkpoint: CheckpointInfo(h3_checkpoint, Arch.h3_e, workflow.FileFormat.diffusion),
     }
+    if with_upsampler:
+        models.resources[resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_upsampler")] = (
+            upsampler
+        )
+    if with_lora:
+        models.resources[resource_id(ResourceKind.lora, Arch.ph3, "p_h3_image")] = ph3_lora
+        models.loras = [ph3_lora]
     models.node_inputs = node_info(nodes)
     te_id = resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_image")
     models.resources[te_id] = text_encoder
@@ -70,10 +81,15 @@ def create(
     batch=1,
     mask: Mask | None = None,
     edit=True,
+    models: ClientModels | None = None,
+    style_checkpoint=checkpoint,
+    use_upsampler=True,
 ):
-    models = client_models()
+    models = models or client_models()
     style = Style(Path("default.json"))
-    style.checkpoints = [checkpoint]
+    style.checkpoints = [style_checkpoint]
+    style.architecture = Arch.ph3
+    style.prompt_upsampler = use_upsampler
     style.sampler = "P-H3 - 8 steps"
     style.sampler_steps = 8
     style.cfg_scale = 1.0
@@ -200,3 +216,91 @@ def test_text_encoder_found_on_server():
     for arch in Arch.list():
         for te in arch.text_encoders:
             assert resource_id(ResourceKind.text_encoder, Arch.all, te) in found
+
+
+def test_prompt_upsampler_text_to_image():
+    models = client_models(with_upsampler=True)
+    nodes = create(
+        WorkflowKind.generate, Extent(1536, 864), ConditioningInput("a fox"), models=models
+    )
+    loaders = {n["inputs"]["clip_name"]: n["inputs"]["type"] for n in find(nodes, "CLIPLoader")}
+    assert loaders == {text_encoder: "minimax", upsampler: "minimax"}
+    fmt = find(nodes, "StringFormat")[0]["inputs"]
+    assert fmt["f_string"] == "Aspect ratio: 16:9\nRequest: {a}" and fmt["values.a"] == "a fox"
+    gen = find(nodes, "TextGenerate")[0]["inputs"]
+    assert gen["thinking"] is True and gen["sampling_mode"] == "off" and gen["max_length"] == 2048
+    assert "image" not in gen
+    cond = find(nodes, "PH3ImageConditioning")[0]["inputs"]
+    assert nodes[cond["prompt"][0]]["class_type"] == "TextGenerate" and cond["prompt"][1] == 0
+
+
+def test_prompt_upsampler_edit():
+    models = client_models(with_upsampler=True)
+    cond = ConditioningInput("put the hat from <Picture 2> on her")
+    cond.control = [ControlInput(ControlMode.reference, Image.create(Extent(512, 512)))]
+    image = Image.create(Extent(1024, 768))
+    nodes = create(WorkflowKind.refine, image, cond, models=models)
+    fmt = find(nodes, "StringFormat")[0]["inputs"]["f_string"]
+    vision = "<|vision_start|><|image_pad|><|vision_end|>"
+    assert fmt == (
+        f"<|im_start|>user\n<Picture 1>: {vision}<Picture 2>: {vision}Edit <Picture 1>. {{a}}"
+        "<|im_end|>\n<|im_start|>assistant\n<think>\n"
+    )
+    gen = find(nodes, "TextGenerate")[0]["inputs"]
+    assert gen["thinking"] is False and gen["max_length"] == 3072
+    assert nodes[gen["image"][0]]["class_type"] == "BatchImagesNode"
+    assert len(find(nodes, "ResizeAndPadImage")) == 1
+    scale = find(nodes, "ImageScaleToTotalPixels")[0]["inputs"]
+    assert scale["megapixels"] == 1 and scale["resolution_steps"] == 1
+
+
+def test_prompt_upsampler_off_or_missing():
+    on, off = client_models(with_upsampler=True), client_models(with_upsampler=True)
+    nodes = create(WorkflowKind.generate, Extent(1024, 1024), ConditioningInput("a fox"), models=on)
+    assert len(find(nodes, "TextGenerate")) == 1
+    args = (WorkflowKind.generate, Extent(1024, 1024), ConditioningInput("a fox"))
+    assert len(find(create(*args, models=off, use_upsampler=False), "TextGenerate")) == 0
+    assert len(find(create(*args), "TextGenerate")) == 0  # upsampler file not on the server
+
+
+def test_h3_checkpoint_with_lora():
+    models = client_models(with_lora=True)
+    args = (WorkflowKind.generate, Extent(1024, 1024), ConditioningInput("a fox"))
+    nodes = create(*args, models=models, style_checkpoint=h3_checkpoint)
+    assert find(nodes, "UNETLoader")[0]["inputs"]["unet_name"] == h3_checkpoint
+    lora = find(nodes, "LoraLoaderBypassModelOnly")[0]["inputs"]
+    assert lora["lora_name"] == ph3_lora and lora["strength_model"] == pytest.approx(1.0)
+    assert nodes[lora["model"][0]]["class_type"] == "UNETLoader"
+    shift = find(nodes, "MiniMaxH3SigmaShift")[0]["inputs"]
+    assert nodes[shift["model"][0]]["class_type"] == "LoraLoaderBypassModelOnly"
+    # P-H3-Image text encoder and VAE, not the MiniMax-H3 ones
+    assert find(nodes, "CLIPLoader")[0]["inputs"]["clip_name"] == text_encoder
+    assert find(nodes, "VAELoader")[0]["inputs"]["vae_name"] == vae
+    # the real P-H3-Image model needs no LoRA
+    nodes = create(*args, models=models)
+    assert len(find(nodes, "LoraLoaderBypassModelOnly")) == 0
+
+
+def test_h3_checkpoint_without_lora():
+    args = (WorkflowKind.generate, Extent(1024, 1024), ConditioningInput("a fox"))
+    with pytest.raises(ValueError, match="p-h3-image_lora"):
+        create(*args, style_checkpoint=h3_checkpoint)
+
+
+def test_arch_override_h3_to_ph3():
+    from ai_diffusion.backend.client import resolve_arch
+
+    style = Style(Path("default.json"))
+    style.checkpoints = [h3_checkpoint]
+    assert resolve_arch(style, client_models()) is Arch.h3_e
+    style.architecture = Arch.ph3
+    assert resolve_arch(style, client_models()) is Arch.ph3
+    assert Arch.is_compatible(Arch.h3_e, Arch.ph3)
+    assert not Arch.is_compatible(Arch.ph3, Arch.qwen2)
+
+
+def test_aspect_ratio_label():
+    assert workflow.ph3_aspect_ratio(Extent(2048, 2048)) == "1:1"
+    assert workflow.ph3_aspect_ratio(Extent(2720, 1536)) == "16:9"
+    assert workflow.ph3_aspect_ratio(Extent(1664, 2496)) == "2:3"
+    assert workflow.ph3_aspect_ratio(Extent(1000, 800)) == "4:3"

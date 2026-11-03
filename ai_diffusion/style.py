@@ -70,6 +70,14 @@ class StyleSettings:
         ),
     )
 
+    prompt_upsampler = Setting(
+        _("Prompt Upsampler"),
+        True,
+        _(
+            "P-H3-Image: rewrite the prompt into the detailed prompt the model works best with, using its prompt upsampler (p-h3-image_prompt_upsampler in text_encoders). Turn off to use the prompt as it is."
+        ),
+    )
+
     clip_skip = Setting(
         _("Clip Skip"),
         0,
@@ -134,6 +142,7 @@ class Style(QObject):
     negative_prompt: str = StyleSettings.negative_prompt.default
     vae: str = StyleSettings.vae.default
     text_encoder: str = StyleSettings.text_encoder.default
+    prompt_upsampler: bool = StyleSettings.prompt_upsampler.default
     clip_skip: int = StyleSettings.clip_skip.default
     v_prediction_zsnr: bool = StyleSettings.v_prediction_zsnr.default
     rescale_cfg: float = StyleSettings.rescale_cfg.default
@@ -235,6 +244,7 @@ class Style(QObject):
             rescale_cfg=self.rescale_cfg,
             loras=[LoraInput.from_dict(l) for l in self.loras if l.get("enabled", True)],
             self_attention_guidance=self.self_attention_guidance,
+            prompt_upsampler=self.prompt_upsampler,
         )
 
     def get_steps(self, is_live: bool) -> tuple[int, int]:

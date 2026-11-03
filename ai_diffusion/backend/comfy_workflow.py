@@ -769,6 +769,59 @@ class ComfyWorkflow:
             args[f"images.image_{i + 1}"] = image
         return self.add("PH3ImageConditioning", 2, **args)
 
+    def load_lora_bypass_model(self, model: Output, lora_name: str, strength: float):
+        return self.add(
+            "LoraLoaderBypassModelOnly",
+            1,
+            model=model,
+            lora_name=lora_name,
+            strength_model=strength,
+        )
+
+    def text_generate(
+        self,
+        clip: Output,
+        prompt: str | Output,
+        max_length: int,
+        thinking: bool,
+        image: Output | None = None,
+    ) -> Output:
+        """Greedy decoding with ComfyUI's TextGenerate, returns the answer without reasoning."""
+        args = {
+            "clip": clip,
+            "prompt": prompt,
+            "max_length": max_length,
+            "sampling_mode": "off",
+            "thinking": thinking,
+            "use_default_template": True,
+            "mtp": "auto",
+        }
+        if image is not None:
+            args["image"] = image
+        return self.add("TextGenerate", 2, **args)[0]
+
+    def string_format(self, f_string: str, a: str | Output):
+        return self.add("StringFormat", 1, f_string=f_string, **{"values.a": a})
+
+    def get_image_size(self, image: Output) -> tuple[Output, Output]:
+        width, height, _ = self.add("GetImageSize", 3, image=image)
+        return width, height
+
+    def resize_and_pad(self, image: Output, width: Output, height: Output):
+        return self.add(
+            "ResizeAndPadImage",
+            1,
+            image=image,
+            target_width=width,
+            target_height=height,
+            padding_color="white",
+            interpolation="lanczos",
+        )
+
+    def batch_images(self, images: list[Output]):
+        args = {f"images.image{i}": image for i, image in enumerate(images)}
+        return self.add("BatchImagesNode", 1, **args)
+
     # MiniMax H3 Image Studio nodes
 
     def h3_image_to_image_prepare(

@@ -1327,11 +1327,22 @@ def ph3_sample(
     reference images after it. The model is distilled to a fixed 8-step grid without CFG, so it
     always samples from pure noise: denoise strength does not apply, edits keep the image instead."""
     model, clip, vae = load_checkpoint_with_lora(w, checkpoint, models.all)
+    if models.all.checkpoints[checkpoint.checkpoint].arch is not Arch.ph3:
+        # A MiniMax-H3 (FL2VA) model with the style set to P-H3-Image runs it as a LoRA
+        lora = models.lora.find("p_h3_image")
+        if lora is None:
+            msg = _("P-H3-Image on a MiniMax-H3 model needs the LoRA {file} in models/loras")
+            raise ValueError(msg.format(file="p-h3-image_lora_bf16.safetensors"))
+        model = w.load_lora_bypass_model(model, lora, 1.0)
     model = w.minimax_h3_sigma_shift(model)
     images = [image] if image is not None else []
     images += [c.image.load(w) for c in cond.all_control if c.mode.is_ip_adapter]
+    images = images[:9]
     prompt = cond.positive.prepare(w, cond.style_prompt)
-    positive, latent = w.ph3_image_conditioning(clip.model, vae, prompt, extent, images[:9])
+    upsampler = models.text_encoder.for_version(Arch.all).find("p_h3_upsampler")
+    if checkpoint.prompt_upsampler and upsampler and prompt:
+        prompt = ph3_upsample_prompt(w, upsampler, prompt, images, extent)
+    positive, latent = w.ph3_image_conditioning(clip.model, vae, prompt, extent, images)
     guider = w.basic_guider(model, positive)
     sampler = w.sampler_select(sampling.sampler)
     steps = sampling.actual_steps
@@ -1346,6 +1357,41 @@ def ph3_sample(
     for result in results[1:]:
         out_image = w.batch_image(out_image, result)
     return w.scale_image(out_image, extent)  # the node rounds the size to a multiple of 32
+
+
+_ph3_aspect_ratios = {"1:1": 1, "4:3": 4 / 3, "3:4": 3 / 4, "3:2": 3 / 2, "2:3": 2 / 3}
+_ph3_aspect_ratios.update({"16:9": 16 / 9, "9:16": 9 / 16})
+
+
+def ph3_aspect_ratio(extent: Extent):
+    """The aspect ratio label closest to the image, as the prompt upsampler expects it."""
+    ratio = extent.width / extent.height
+    return min(_ph3_aspect_ratios, key=lambda k: abs(math.log(_ph3_aspect_ratios[k] / ratio)))
+
+
+def ph3_upsample_prompt(
+    w: ComfyWorkflow, upsampler: str, prompt: str | Output, images: list[Output], extent: Extent
+):
+    """Rewrites a short request into the full prompt P-H3-Image needs, with its prompt upsampler
+    (Qwen3.5-9B). Same inputs as PrunaAI's reference workflows, greedy so a request always gives
+    the same prompt (ComfyUI caches it)."""
+    clip = w.load_clip(upsampler, type="minimax")
+    if not images:
+        request = w.string_format(
+            f"Aspect ratio: {ph3_aspect_ratio(extent)}\nRequest: {{a}}", prompt
+        )
+        return w.text_generate(clip, request, 2048, thinking=True)
+    # The image to edit at 1 MP, references padded to its size so they can be batched
+    first = w.scale_to_megapixels(images[0], 1.0)
+    width, height = w.get_image_size(first)
+    batch = w.batch_images([first] + [w.resize_and_pad(i, width, height) for i in images[1:]])
+    vision = "<|vision_start|><|image_pad|><|vision_end|>"
+    pictures = "".join(f"<Picture {i + 1}>: {vision}" for i in range(len(images)))
+    template = (
+        "<|im_start|>user\n{}Edit <Picture 1>. {{a}}<|im_end|>\n<|im_start|>assistant\n<think>\n"
+    )
+    request = w.string_format(template.format(pictures), prompt)
+    return w.text_generate(clip, request, 3072, thinking=False, image=batch)
 
 
 def ph3_generate(
