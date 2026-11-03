@@ -820,20 +820,8 @@ def find_model(model_list: Sequence[str], id: ResourceId):
 
 def _find_text_encoder_models(model_list: Sequence[str]):
     kind = ResourceKind.text_encoder
-    tes = [
-        "clip_l",
-        "clip_g",
-        "t5",
-        "qwen",
-        "qwen_3_06b",
-        "qwen_3_4b",
-        "qwen_3_8b",
-        "qwen_3vl_4b",
-        "qwen_3vl_8b",
-        "qwen_3_5_9b",
-        "qwen_3vl_32b_h3",
-        "ministral",
-    ]
+    # every text encoder some architecture uses, in a stable order
+    tes = list(dict.fromkeys(te for arch in Arch.list() for te in arch.text_encoders))
     return {
         resource_id(kind, Arch.all, te): _find_model(model_list, kind, Arch.all, te) for te in tes
     }

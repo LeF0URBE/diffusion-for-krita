@@ -188,3 +188,15 @@ def test_download_workload():
 @pytest.mark.parametrize("arch", [Arch.ph3])
 def test_text_encoder(arch: Arch):
     assert arch.text_encoders == ["p_h3_image"]
+
+
+def test_text_encoder_found_on_server():
+    from ai_diffusion.backend.comfy_client import _find_text_encoder_models
+
+    files = [text_encoder, "qwen3vl_8b_int8_convrot.safetensors", "t5xxl_fp16.safetensors"]
+    found = _find_text_encoder_models(files)
+    assert found[resource_id(ResourceKind.text_encoder, Arch.all, "p_h3_image")] == text_encoder
+    # every architecture's text encoders are searched for
+    for arch in Arch.list():
+        for te in arch.text_encoders:
+            assert resource_id(ResourceKind.text_encoder, Arch.all, te) in found
