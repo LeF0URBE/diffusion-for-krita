@@ -724,6 +724,11 @@ class ComfyClient(Client):
         has_checkpoint = any(cp.arch is sdver for cp in models.checkpoints.values())
         if not has_checkpoint and sdver is Arch.illu:  # Illu checkpoints are detected as SDXL
             has_checkpoint = any(cp.arch is Arch.sdxl for cp in models.checkpoints.values())
+        if not has_checkpoint and sdver is Arch.ph3:  # P-H3-Image as a LoRA on MiniMax-H3 FL2VA
+            has_lora = models.find(ResourceId(ResourceKind.lora, Arch.ph3, "p_h3_image"))
+            has_checkpoint = has_lora is not None and any(
+                cp.arch is Arch.h3_e for cp in models.checkpoints.values()
+            )
         if not has_checkpoint:
             missing.append(ResourceId(ResourceKind.checkpoint, sdver, "model"))
         clip_type = sdver.comfy_clip_type
