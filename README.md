@@ -169,9 +169,12 @@ Restart Krita for changes to take effect.
 
 ## <a name="improve-prompt"></a> Improve Prompt and text encoders
 **Improve Prompt** is the wand button in the top right corner of the prompt box. It rewrites the prompt
-with a language model, in the format the style's model wants: Danbooru tags for Illustrious, keywords for
-SD 1.5 / XL, a detailed paragraph for Flux, Qwen, Krea 2, MOSS and others, and a single clear instruction
-for edit models. Ctrl+Z restores your original prompt. Pick the language model in **Settings > Interface**:
+with a language model, using a template made for the style's model: Danbooru tags for Illustrious, tags
+plus a sentence for Anima, keywords for SD 1.5 / XL, quoted text for models that render text (Qwen, Z-Image,
+ERNIE, P-H3), a photographer's description for Krea 2, very detailed captions for Fibo 2, and so on. In edit
+mode, and for edit models, it writes one clear instruction that says what changes and what stays the same,
+and keeps the model's way of naming reference images (`Picture 2`, `<image2>`, `image 2`, ...). Words the
+style already adds (like `masterpiece, best quality`) are not repeated. Ctrl+Z restores your original prompt. Pick the language model in **Settings > Interface**:
 * **ComfyUI (text encoder of the style)**: no setup. The style's own text encoder writes the prompt through
   ComfyUI's `TextGenerate` node (ComfyUI 0.43 or newer). Works with Qwen3-VL (Krea 2, Fibo 2, Qwen Image 2),
   Qwen3.5 (MOSS) and other LLM text encoders that ComfyUI can run for text; not with CLIP or T5
@@ -180,6 +183,9 @@ for edit models. Ctrl+Z restores your original prompt. Pick the language model i
   (`http://localhost:11434/v1`), LM Studio or OpenAI. Set the URL, the model name and an API key if needed.
 
 "Improve Prompt Instructions" adds your own rules, e.g. "keep it under 40 words" or "always anime style".
+To replace a model's template completely, put a text file in the `prompt_templates` folder of the plugin's data
+folder (next to `logs`), named after the architecture as in style files: `illu.txt`, `zimage.txt`,
+`qwen2-edit.txt` (edit mode), `flux_k-edit.txt`, ... The rules for the output format are still added.
 
 **Text encoder per style**: under *Checkpoint configuration (advanced)* in the style settings you can pick
 the text encoder file, the same way as the VAE. Use it for a different quantization or a fine-tuned text

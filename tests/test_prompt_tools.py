@@ -6,7 +6,7 @@ from ai_diffusion.backend.client import CheckpointInfo, ClientModels
 from ai_diffusion.backend.comfy_workflow import ComfyWorkflow
 from ai_diffusion.backend.resources import ResourceKind, resource_id
 from ai_diffusion.files import FileFormat
-from ai_diffusion.model import prompt_enhance
+from ai_diffusion.model import prompt_enhance, prompt_templates
 from ai_diffusion.settings import settings
 from ai_diffusion.style import Arch, StyleSettings
 
@@ -74,9 +74,55 @@ def test_clean_output():
 def test_system_prompt():
     settings.prompt_enhancer_instructions = ""
     assert "Danbooru" in prompt_enhance.system_prompt(Arch.illu)
-    assert "comma-separated keywords" in prompt_enhance.system_prompt(Arch.sdxl)
+    assert "separated by commas" in prompt_enhance.system_prompt(Arch.sdxl)
     assert "editing" in prompt_enhance.system_prompt(Arch.qwen_e)
-    assert "natural" in prompt_enhance.system_prompt(Arch.moss)
+    assert "natural language" in prompt_enhance.system_prompt(Arch.moss)
+    assert "Output ONLY the prompt" in prompt_enhance.system_prompt(Arch.moss)
     settings.prompt_enhancer_instructions = "keep it short"
     assert prompt_enhance.system_prompt(Arch.moss).endswith("keep it short")
     settings.prompt_enhancer_instructions = ""
+
+
+@pytest.mark.parametrize("arch", Arch.list())
+def test_template_per_arch(arch: Arch):
+    generate = prompt_templates.builtin(arch, editing=False)
+    edit = prompt_templates.builtin(arch, editing=True)
+    assert generate and edit
+    if arch.is_edit:
+        assert generate == edit  # edit-only: always the edit template
+    elif arch.supports_edit:
+        assert generate != edit and "editing" in edit
+    else:
+        assert generate == edit  # no edit mode, always a text-to-image prompt
+    if placeholder := workflow._layer_replace.get(arch):
+        assert placeholder.format(2) in edit
+
+
+def test_template_names_model():
+    assert "Illustrious" in prompt_templates.builtin(Arch.illu_v, False)
+    assert "Flux 2 Klein" in prompt_templates.builtin(Arch.flux2_9b, False)
+    assert "Kontext" in prompt_templates.builtin(Arch.flux_k, False)
+    assert "Picture 2" in prompt_templates.builtin(Arch.qwen_e_p, False)
+    assert "Layered" in prompt_templates.builtin(Arch.qwen_l, False)
+
+
+def test_template_style_prompt():
+    style = "{prompt}, masterpiece, best quality, absurdres"
+    prompt = prompt_enhance.system_prompt(Arch.illu, style_prompt=style)
+    assert "do not repeat them: masterpiece, best quality, absurdres" in prompt
+    assert "do not repeat" not in prompt_enhance.system_prompt(Arch.illu, style_prompt="{prompt}")  # noqa: RUF027
+
+
+def test_template_user_file(tmp_path):
+    (tmp_path / "illu.txt").write_text("my booru template\n", encoding="utf-8")
+    (tmp_path / "qwen2-edit.txt").write_text("my qwen2 edit template", encoding="utf-8")
+    (tmp_path / "moss.txt").write_text("  ", encoding="utf-8")  # empty: ignored
+    assert prompt_templates.get(Arch.illu, False, tmp_path) == "my booru template"
+    assert prompt_templates.get(Arch.qwen2, True, tmp_path) == "my qwen2 edit template"
+    assert prompt_templates.get(Arch.qwen2, False, tmp_path) == prompt_templates.builtin(
+        Arch.qwen2, False
+    )
+    assert prompt_templates.get(Arch.moss, False, tmp_path) == prompt_templates.builtin(
+        Arch.moss, False
+    )
+    assert prompt_templates.user_file(Arch.qwen_e, False, tmp_path).name == "qwen_e-edit.txt"

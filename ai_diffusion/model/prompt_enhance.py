@@ -16,57 +16,28 @@ from ..localization import translate as _
 from ..settings import PromptEnhancer, settings
 from ..style import Style, StyleSettings
 from ..util import client_logger as log
-
-_rules = """Rules:
-- Keep every subject, detail and style the user asked for. Do not contradict the input.
-- Write in English, even if the input is in another language.
-- If the input is already detailed, only polish it; do not invent a different scene.
-- Output ONLY the prompt. No preface, no explanation, no quotes, no Markdown."""
-
-_natural = (
-    "You improve text prompts for an AI image generation model which understands natural "
-    "language. Rewrite the user's prompt into one detailed, vivid paragraph: describe the "
-    "subject, its appearance and pose, the setting, composition, lighting, colors and the "
-    "artistic medium or photographic style. Use concrete visual words, avoid abstract praise "
-    "and filler like 'masterpiece' or 'stunning'.\n" + _rules
-)
-
-_tags = (
-    "You improve text prompts for a Stable Diffusion image model which works best with short, "
-    "comma-separated keywords. Rewrite the user's prompt as a list of concise keywords and "
-    "phrases: main subject first, then details of appearance, pose, setting, composition, "
-    "lighting, colors and art style. Keep it under 60 words.\n" + _rules
-)
-
-_booru = (
-    "You improve text prompts for an anime image model trained on Danbooru tags. Rewrite the "
-    "user's prompt as comma-separated Danbooru-style tags (lowercase, spaces instead of "
-    "underscores): subject count like 1girl, character and series names if given, then "
-    "appearance, clothing, pose, expression, setting, composition and lighting tags. Keep it "
-    "under 50 tags.\n" + _rules
-)
-
-_edit = (
-    "You improve instructions for an AI image editing model. The user describes a change to "
-    "an existing image. Rewrite it as one clear, specific instruction: what to change, where, "
-    "and what it should look like afterwards. State explicitly that everything else (identity, "
-    "pose, background, style) stays the same unless the user wants it changed. Keep it to one "
-    "to three sentences.\n" + _rules
-)
+from ..util import user_data_dir
+from . import prompt_templates
 
 
-def system_prompt(arch: Arch):
-    if arch in [Arch.illu, Arch.illu_v]:
-        prompt = _booru
-    elif arch in [Arch.sd15, Arch.sdxl]:
-        prompt = _tags
-    elif arch.is_edit:
-        prompt = _edit
-    else:
-        prompt = _natural
+def system_prompt(arch: Arch, editing: bool = False, style_prompt: str = ""):
+    """Instructions for the language model: the architecture's template, the shared rules,
+    the parts the style adds by itself, and the user's extra instructions."""
+    template = prompt_templates.get(arch, editing, templates_dir())
+    prompt = f"{template}\n{prompt_templates.rules}"
+    style_text = style_prompt.replace("{prompt}", "").strip(" ,.")  # noqa: RUF027
+    if style_text:
+        prompt += (
+            "\nThe style automatically adds these words around the prompt, do not repeat them: "
+            f"{style_text}"
+        )
     if extra := settings.prompt_enhancer_instructions.strip():
         prompt += f"\nAdditional instructions: {extra}"
     return prompt
+
+
+def templates_dir():
+    return user_data_dir / "prompt_templates"
 
 
 def clean_output(text: str):
@@ -78,12 +49,15 @@ def clean_output(text: str):
     return text
 
 
-async def improve_prompt(prompt: str, style: Style, client: Client | None):
+async def improve_prompt(prompt: str, style: Style, client: Client | None, editing: bool = False):
     prompt = prompt.strip()
     if not prompt:
         raise ValueError(_("Write a prompt first, then click Improve Prompt."))
     arch = resolve_arch(style, client)
-    instructions = system_prompt(arch)
+    instructions = system_prompt(arch, editing, style.style_prompt)
+    log.info(
+        f"Improve Prompt template: {arch.name}{' (edit)' if prompt_templates.is_edit(arch, editing) else ''}"
+    )
     if settings.prompt_enhancer is PromptEnhancer.openai:
         result = await _openai_chat(prompt, instructions)
     else:
