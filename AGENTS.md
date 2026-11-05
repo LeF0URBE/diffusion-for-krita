@@ -79,6 +79,13 @@ python scripts/design.py --exit
    in the main clone rather than installing from requirements.
 
 
+### Branches and commits
+
+Follow the rules in `CONTRIBUTING.md` (sections Branches, Commits, Releases). In short: work on a
+kebab-case topic branch from `main`, rebase instead of merging `main` in, one logical change per
+commit, imperative subject (≤72 chars, optional `Area:` prefix), never force-push `main`.
+
+
 ## Code Guidelines
 
 * Avoid docstrings/comments for small functions and intuitive code

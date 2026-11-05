@@ -49,6 +49,52 @@ For bigger changes, it makes sense to create an issue first to discuss a proposa
 
 You can submit your changes by opening a [pull request](https://github.com/SHoogstad/diffusion-for-krita/pulls).
 
+### Branches
+
+* `main` is the released code. Every commit on it must work, and each release is tagged on it.
+  `main` is protected: no force pushes and no deleting it, so never rewrite its history.
+* Do all work on a short-lived branch made from the latest `main`. Name it in lowercase
+  kebab-case after what it does, not after who made it:
+  * features: the feature or model, eg. `prompt-tools`, `p-h3-image`, `pose-match-proportions`
+  * fixes: `fix-<what>`, eg. `fix-control-layer-crash`
+  * docs or repo chores: `docs-<what>`, `chore-<what>`
+* One topic per branch. Unrelated fixes go on their own branch, so they can be released alone.
+* Before merging, rebase onto `main` (`git pull --rebase` / `git rebase main`) so history stays
+  linear and `main` can be fast-forwarded. Do not merge `main` into your branch.
+* Delete the branch after it is merged. Only `main` lives on long-term.
+* Experimental work that ships as a pre-release may stay on its branch until the pre-release
+  is promoted to a full release; then it is merged into `main` the same way.
+
+### Commits
+
+* One logical change per commit. Formatting, renames and refactors go in separate commits
+  from behaviour changes.
+* Subject line: imperative mood, capitalized, no trailing period, at most 72 characters.
+  Write what the change does for the user, not which files were touched.
+* Prefix the subject with the area when it helps: a model, workspace or component followed by
+  a colon, eg. `MOSS-Image: keep the first region's box ...`, `Pose: fix skeleton editing ...`,
+  `Live: preview scales with the docker`, `Runpod: ...`.
+* Leave an empty line after the subject. Use the body to explain *why* and anything a reviewer
+  can't see from the diff (tested hardware, ComfyUI version, known limits). Wrap at 72 characters.
+* Reference issues in the body: `Fixes #123` or `See #123`.
+* Every commit must pass `ruff format`, `ruff check`, `pyright` and `pytest tests --ci`.
+  CI does not run on push, so run them locally.
+* Commit with your GitHub noreply address (`<id>+<user>@users.noreply.github.com`) if you
+  don't want your private email in public history.
+* Never commit secrets (API keys, tokens), model files, logs or build output (`*.zip`).
+
+### Releases
+
+* Version scheme: `<generic>.<feature>.<fix>`. Big features bump the middle number, everything
+  else bumps the last, eg. `1.60.1` → `1.61.0` (feature) or `1.61.1` (fix).
+* The release commit only bumps `__version__` in `ai_diffusion/__init__.py` and has the
+  subject `Version X.Y.Z` (optionally `Version X.Y.Z: <one-line summary>`).
+* Tag that commit `vX.Y.Z` and attach `diffusion_for_krita-X.Y.Z.zip`. The auto-updater reads
+  the latest GitHub release, so a release must have the zip and be marked latest
+  (or pre-release for testing builds).
+* Never reuse a version number. If a release is pulled, the next one gets a higher number,
+  so installs that already got the pulled version still update.
+
 ### Plugin development
 
 The easiest way to run a development version of the plugin is to create symlinks to the git repository where Krita expects to find Python plugins:
