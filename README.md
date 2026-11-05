@@ -169,12 +169,24 @@ Restart Krita for changes to take effect.
 
 ## <a name="improve-prompt"></a> Improve Prompt and text encoders
 **Improve Prompt** is the wand button in the top right corner of the prompt box. It rewrites the prompt
-with a language model, using a template made for the style's model: Danbooru tags for Illustrious, tags
-plus a sentence for Anima, keywords for SD 1.5 / XL, quoted text for models that render text (Qwen, Z-Image,
-ERNIE, P-H3), a photographer's description for Krea 2, very detailed captions for Fibo 2, and so on. In edit
-mode, and for edit models, it writes one clear instruction that says what changes and what stays the same,
-and keeps the model's way of naming reference images (`Picture 2`, `<image2>`, `image 2`, ...). Words the
-style already adds (like `masterpiece, best quality`) are not repeated. Ctrl+Z restores your original prompt. Pick the language model in **Settings > Interface**:
+with a language model, the way the style's model wants it:
+* **Official prompt enhancers**, copied unchanged from the model makers: Qwen-Image and Qwen-Image-Edit
+  (QwenLM), Qwen-Image 2.1, Krea 2, MOSS-Image, ERNIE-Image and Z-Image (see
+  [ai_diffusion/prompt_templates](ai_diffusion/prompt_templates/SOURCES.md)). Their settings come along too,
+  e.g. thinking for Krea 2 and Qwen 2, the JSON answer of Qwen-Image-Edit, and the canvas size for ERNIE.
+* **P-H3-Image** uses PrunaAI's own prompt upsampler when it is on the ComfyUI server, with the request
+  format of the official workflow (`Aspect ratio:` + `Request:`). If you improve a P-H3 prompt this way, you
+  can turn off *Prompt Upsampler* in the style, otherwise it runs again on generate. With an OpenAI-compatible
+  server, or for edits, it follows the rules from the P-H3-Image model card
+  (`Edit <Picture 1>. ... Keep ... exactly as it is.`). ERNIE-Image also uses its own enhancer model
+  (`ernie-image-prompt-enhancer`) if the server has it.
+* **The other models** get templates written from the makers' prompting guides: FLUX.2 [klein] prose ending in
+  `Style: ... Mood: ...`, Kontext edits that only describe the change, Anima tags in the official order with `@`
+  for artists plus two sentences, Danbooru tags for Illustrious, keywords for SD 1.5 / XL, and so on.
+
+In edit mode, and for edit models, it writes an edit instruction that keeps the model's way of naming reference
+images (`Picture 2`, `<image2>`, `image 2`, ...). Words the style already adds (like `masterpiece, best quality`)
+are not repeated. Ctrl+Z restores your original prompt. Pick the language model in **Settings > Interface**:
 * **ComfyUI (text encoder of the style)**: no setup. The style's own text encoder writes the prompt through
   ComfyUI's `TextGenerate` node (ComfyUI 0.43 or newer). Works with Qwen3-VL (Krea 2, Fibo 2, Qwen Image 2),
   Qwen3.5 (MOSS) and other LLM text encoders that ComfyUI can run for text; not with CLIP or T5
@@ -185,7 +197,8 @@ style already adds (like `masterpiece, best quality`) are not repeated. Ctrl+Z r
 "Improve Prompt Instructions" adds your own rules, e.g. "keep it under 40 words" or "always anime style".
 To replace a model's template completely, put a text file in the `prompt_templates` folder of the plugin's data
 folder (next to `logs`), named after the architecture as in style files: `illu.txt`, `zimage.txt`,
-`qwen2-edit.txt` (edit mode), `flux_k-edit.txt`, ... The rules for the output format are still added.
+`qwen2-edit.txt` (edit mode), `flux_k-edit.txt`, ... Put `{prompt}` where the prompt goes, or leave it out to use
+the file as system prompt; the plugin's rules for the output format are added to your file.
 
 **Text encoder per style**: under *Checkpoint configuration (advanced)* in the style settings you can pick
 the text encoder file, the same way as the VAE. Use it for a different quantization or a fine-tuned text
