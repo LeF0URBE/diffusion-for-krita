@@ -59,11 +59,15 @@ You can submit your changes by opening a [pull request](https://github.com/SHoog
   * fixes: `fix-<what>`, eg. `fix-control-layer-crash`
   * docs or repo chores: `docs-<what>`, `chore-<what>`
 * One topic per branch. Unrelated fixes go on their own branch, so they can be released alone.
-* Before merging, rebase onto `main` (`git pull --rebase` / `git rebase main`) so history stays
-  linear and `main` can be fast-forwarded. Do not merge `main` into your branch.
-* Delete the branch after it is merged. Only `main` lives on long-term.
+* Changes reach `main` only through a pull request, merged with **Create a merge commit**
+  (squash and rebase merging are turned off). A merge commit keeps the branch's own commits,
+  so GitHub shows the branch as fully merged.
+* If `main` moved on while the branch was open, update the branch with `git rebase main`
+  before review. Do not merge `main` into your branch.
+* The branch is deleted automatically when its pull request is merged. Only `main` lives on
+  long-term.
 * Experimental work that ships as a pre-release may stay on its branch until the pre-release
-  is promoted to a full release; then it is merged into `main` the same way.
+  is promoted to a full release; then it is merged into `main` through a pull request.
 
 ### Commits
 

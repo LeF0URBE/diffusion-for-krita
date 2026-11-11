@@ -1,4 +1,4 @@
-<!-- Branch: kebab-case topic branch from main, rebased onto main. See CONTRIBUTING.md. -->
+<!-- Branch: kebab-case topic branch from main, rebased onto main, merged with a merge commit. See CONTRIBUTING.md. -->
 
 ## What and why
 
