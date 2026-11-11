@@ -82,8 +82,8 @@ python scripts/design.py --exit
 ### Branches and commits
 
 Follow the rules in `CONTRIBUTING.md` (sections Branches, Commits, Releases). In short: work on a
-kebab-case topic branch from `main`, rebase instead of merging `main` in, one logical change per
-commit, imperative subject (≤72 chars, optional `Area:` prefix), never force-push `main`.
+kebab-case topic branch from `main`, rebase instead of merging `main` in, land it through a pull
+request merged with a merge commit, one logical change per commit, imperative subject (≤72 chars, optional `Area:` prefix), never force-push `main`.
 
 
 ## Code Guidelines
