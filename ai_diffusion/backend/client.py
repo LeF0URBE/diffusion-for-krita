@@ -425,7 +425,18 @@ class Client(ABC):
         return text
 
     async def generate_text(
-        self, text_encoder: str, clip_type: str, prompt: str, system_prompt: str, seed: int = 0
+        self,
+        text_encoder: str,
+        clip_type: str,
+        prompt: str,
+        system_prompt: str,
+        seed: int = 0,
+        *,
+        max_length: int = 1024,
+        thinking: bool = False,
+        temperature: float = 0.7,
+        sampling: bool = True,
+        use_default_template: bool = True,
     ) -> str:
         """Run a language model (text encoder) on the server and return the generated text."""
         raise RuntimeError(_("This server cannot generate text"))

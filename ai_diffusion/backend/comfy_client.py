@@ -50,6 +50,7 @@ from .resources import (
     ResourceId,
     ResourceKind,
     UpscalerName,
+    is_minimax_h3_video,
     resource_id,
 )
 from .workflow import create as create_workflow
@@ -583,11 +584,33 @@ class ComfyClient(Client):
             return text
 
     async def generate_text(
-        self, text_encoder: str, clip_type: str, prompt: str, system_prompt: str, seed: int = 0
+        self,
+        text_encoder: str,
+        clip_type: str,
+        prompt: str,
+        system_prompt: str,
+        seed: int = 0,
+        *,
+        max_length: int = 1024,
+        thinking: bool = False,
+        temperature: float = 0.7,
+        sampling: bool = True,
+        use_default_template: bool = True,
     ):
         if "TextGenerate" not in self.models.node_inputs:
             raise RuntimeError(_("ComfyUI is too old: the TextGenerate node is missing"))
         loader = "CLIPLoaderGGUF" if text_encoder.endswith(".gguf") else "CLIPLoader"
+        sampling_args: dict[str, Any] = {"sampling_mode": "off"}
+        if sampling:
+            sampling_args = {
+                "sampling_mode": "on",
+                "sampling_mode.temperature": temperature,
+                "sampling_mode.top_k": 64,
+                "sampling_mode.top_p": 0.95,
+                "sampling_mode.min_p": 0.05,
+                "sampling_mode.repetition_penalty": 1.05,
+                "sampling_mode.seed": seed,
+            }
         workflow = {
             "1": {"class_type": loader, "inputs": {"clip_name": text_encoder, "type": clip_type}},
             "2": {
@@ -595,17 +618,11 @@ class ComfyClient(Client):
                 "inputs": {
                     "clip": ["1", 0],
                     "prompt": prompt,
-                    "max_length": 512,
-                    "sampling_mode": "on",
-                    "sampling_mode.temperature": 0.7,
-                    "sampling_mode.top_k": 64,
-                    "sampling_mode.top_p": 0.95,
-                    "sampling_mode.min_p": 0.05,
-                    "sampling_mode.repetition_penalty": 1.05,
-                    "sampling_mode.seed": seed,
-                    "thinking": False,
-                    "use_default_template": True,
+                    "max_length": max_length,
+                    "thinking": thinking,
+                    "use_default_template": use_default_template,
                     "system_prompt": system_prompt,
+                    **sampling_args,
                 },
             },
             "3": {"class_type": "PreviewAny", "inputs": {"source": ["2", 0]}},
@@ -721,7 +738,12 @@ class ComfyClient(Client):
                 continue
             if models.find(id) is None:
                 missing.append(id)
-        has_checkpoint = any(cp.arch is sdver for cp in models.checkpoints.values())
+        checkpoints = [cp for cp in models.checkpoints.values() if cp.arch is sdver]
+        if sdver is Arch.ph3:  # MiniMax-H3 video models only count with the P-H3-Image LoRA
+            has_lora = models.find(ResourceId(ResourceKind.lora, Arch.ph3, "p_h3_image"))
+            if has_lora is None:
+                checkpoints = [cp for cp in checkpoints if not is_minimax_h3_video(cp.filename)]
+        has_checkpoint = len(checkpoints) > 0
         if not has_checkpoint and sdver is Arch.illu:  # Illu checkpoints are detected as SDXL
             has_checkpoint = any(cp.arch is Arch.sdxl for cp in models.checkpoints.values())
         if not has_checkpoint and sdver is Arch.ph3:  # P-H3-Image as a LoRA on MiniMax-H3 FL2VA

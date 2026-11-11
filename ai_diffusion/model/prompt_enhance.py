@@ -12,61 +12,44 @@ import re
 from ..backend.client import Client, resolve_arch
 from ..backend.network import RequestManager
 from ..backend.resources import Arch, ResourceId, ResourceKind
+from ..image import Extent
 from ..localization import translate as _
 from ..settings import PromptEnhancer, settings
 from ..style import Style, StyleSettings
 from ..util import client_logger as log
-
-_rules = """Rules:
-- Keep every subject, detail and style the user asked for. Do not contradict the input.
-- Write in English, even if the input is in another language.
-- If the input is already detailed, only polish it; do not invent a different scene.
-- Output ONLY the prompt. No preface, no explanation, no quotes, no Markdown."""
-
-_natural = (
-    "You improve text prompts for an AI image generation model which understands natural "
-    "language. Rewrite the user's prompt into one detailed, vivid paragraph: describe the "
-    "subject, its appearance and pose, the setting, composition, lighting, colors and the "
-    "artistic medium or photographic style. Use concrete visual words, avoid abstract praise "
-    "and filler like 'masterpiece' or 'stunning'.\n" + _rules
-)
-
-_tags = (
-    "You improve text prompts for a Stable Diffusion image model which works best with short, "
-    "comma-separated keywords. Rewrite the user's prompt as a list of concise keywords and "
-    "phrases: main subject first, then details of appearance, pose, setting, composition, "
-    "lighting, colors and art style. Keep it under 60 words.\n" + _rules
-)
-
-_booru = (
-    "You improve text prompts for an anime image model trained on Danbooru tags. Rewrite the "
-    "user's prompt as comma-separated Danbooru-style tags (lowercase, spaces instead of "
-    "underscores): subject count like 1girl, character and series names if given, then "
-    "appearance, clothing, pose, expression, setting, composition and lighting tags. Keep it "
-    "under 50 tags.\n" + _rules
-)
-
-_edit = (
-    "You improve instructions for an AI image editing model. The user describes a change to "
-    "an existing image. Rewrite it as one clear, specific instruction: what to change, where, "
-    "and what it should look like afterwards. State explicitly that everything else (identity, "
-    "pose, background, style) stays the same unless the user wants it changed. Keep it to one "
-    "to three sentences.\n" + _rules
-)
+from ..util import user_data_dir
+from . import prompt_templates
 
 
-def system_prompt(arch: Arch):
-    if arch in [Arch.illu, Arch.illu_v]:
-        prompt = _booru
-    elif arch in [Arch.sd15, Arch.sdxl]:
-        prompt = _tags
-    elif arch.is_edit:
-        prompt = _edit
-    else:
-        prompt = _natural
+def extra_instructions(style_prompt: str = ""):
+    """The parts the style adds by itself and the user's own instructions."""
+    lines = []
+    style_text = style_prompt.replace("{prompt}", "").strip(" ,.")
+    if style_text:
+        lines.append(
+            "The style automatically adds these words around the prompt, do not repeat them: "
+            + style_text
+        )
     if extra := settings.prompt_enhancer_instructions.strip():
-        prompt += f"\nAdditional instructions: {extra}"
-    return prompt
+        lines.append(f"Additional instructions: {extra}")
+    return "\n".join(lines)
+
+
+def build_request(
+    arch: Arch, prompt: str, editing=False, style_prompt="", extent: Extent | None = None
+):
+    extra = extra_instructions(style_prompt)
+    return prompt_templates.build(arch, editing, prompt, extent, extra, templates_dir())
+
+
+def system_prompt(arch: Arch, editing: bool = False, style_prompt: str = ""):
+    """The system prompt (or the whole request, for templates with the prompt inside)."""
+    request = build_request(arch, "{prompt}", editing, style_prompt)
+    return "\n".join(t for t in (request.system, request.user) if t != "{prompt}")
+
+
+def templates_dir():
+    return user_data_dir / "prompt_templates"
 
 
 def clean_output(text: str):
@@ -78,51 +61,103 @@ def clean_output(text: str):
     return text
 
 
-async def improve_prompt(prompt: str, style: Style, client: Client | None):
+async def improve_prompt(
+    prompt: str,
+    style: Style,
+    client: Client | None,
+    editing: bool = False,
+    extent: Extent | None = None,
+):
     prompt = prompt.strip()
     if not prompt:
         raise ValueError(_("Write a prompt first, then click Improve Prompt."))
     arch = resolve_arch(style, client)
-    instructions = system_prompt(arch)
+    request = build_request(arch, prompt, editing, style.style_prompt, extent)
+    key = prompt_templates.key(arch, editing)
+    log.info(f"Improve Prompt: template {key} ({request.source})")
     if settings.prompt_enhancer is PromptEnhancer.openai:
-        result = await _openai_chat(prompt, instructions)
+        result = await _openai_chat(request)
     else:
-        result = await _comfy_generate(prompt, instructions, arch, style, client)
+        result = await _comfy_generate(request, prompt, extent, arch, style, client)
+    result = prompt_templates.parse(clean_output(result), request.options)
     result = clean_output(result)
     if not result:
         raise RuntimeError(_("The language model returned an empty prompt."))
     return result
 
 
+def _find_enhancer(enhancer: prompt_templates.Enhancer, client: Client):
+    files = client.models.text_encoders
+    return next((f for f in files if enhancer.file in f.lower()), None)
+
+
 async def _comfy_generate(
-    prompt: str, instructions: str, arch: Arch, style: Style, client: Client | None
+    request: prompt_templates.Request,
+    prompt: str,
+    extent: Extent | None,
+    arch: Arch,
+    style: Style,
+    client: Client | None,
 ):
     if client is None:
         raise RuntimeError(_("Not connected to a server."))
     if arch is Arch.auto:
         raise RuntimeError(_("The style's checkpoint was not found on the server."))
+    opts = request.options
+    seed = random.randint(0, 2**31 - 1)
+
+    # Dedicated prompt enhancer of the model (eg. P-H3-Image's upsampler), if it's on the server
+    enhancer = opts.enhancer
+    if enhancer and request.source != "custom":
+        if file := _find_enhancer(enhancer, client):
+            user = prompt_templates.fill(enhancer.user_format, prompt, extent)
+            system = request.system if enhancer.system else ""
+            raw = enhancer.raw_template
+            if raw:
+                user = raw.replace("{system}", system).replace("{user}", user)
+                system = ""
+            log.info(f"Improving prompt with {file} ({enhancer.clip_type})")
+            return await client.generate_text(
+                file,
+                enhancer.clip_type,
+                user,
+                system,
+                seed,
+                max_length=opts.max_tokens,
+                thinking=enhancer.thinking,
+                temperature=opts.temperature,
+                sampling=enhancer.sampling,
+                use_default_template=raw is None,
+            )
+
     if not arch.can_generate_text or arch.clip_loader_type is None:
         msg = _("The text encoder of {arch} models can't write text.").format(arch=arch.value)
         msg += " " + _("Select an OpenAI-compatible server in Settings > Interface.")
         raise RuntimeError(msg)
-
     text_encoder = style.text_encoder
     if not text_encoder or text_encoder == StyleSettings.text_encoder.default:
         id = ResourceId(ResourceKind.text_encoder, arch, arch.main_text_encoder)
         text_encoder = client.models.find(id)
         if text_encoder is None:
             raise RuntimeError(_("Text encoder not found on the server") + f": {id.name}")
-    seed = random.randint(0, 2**31 - 1)
     log.info(f"Improving prompt with {text_encoder} ({arch.clip_loader_type})")
     return await client.generate_text(
-        text_encoder, arch.clip_loader_type, prompt, instructions, seed
+        text_encoder,
+        arch.clip_loader_type,
+        request.user,
+        request.system,
+        seed,
+        max_length=opts.max_tokens,
+        thinking=opts.thinking,
+        temperature=opts.temperature,
+        sampling=opts.sampling,
     )
 
 
 _requests: RequestManager | None = None
 
 
-async def _openai_chat(prompt: str, instructions: str):
+async def _openai_chat(request: prompt_templates.Request):
     global _requests
     if _requests is None:
         _requests = RequestManager()
@@ -130,19 +165,20 @@ async def _openai_chat(prompt: str, instructions: str):
     if not base:
         raise RuntimeError(_("Set the LLM Server URL in Settings > Interface."))
     url = base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+    messages = [{"role": "user", "content": request.user}]
+    if request.system:
+        messages.insert(0, {"role": "system", "content": request.system})
+    opts = request.options
     data = {
         "model": settings.prompt_enhancer_model.strip() or "default",
-        "messages": [
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1024,
+        "messages": messages,
+        "temperature": opts.temperature,
+        "max_tokens": max(opts.max_tokens, 4096 if opts.thinking else 1024),
         "stream": False,
     }
     key = settings.prompt_enhancer_api_key.strip() or None
     log.info(f"Improving prompt with {url} (model {data['model']})")
-    reply = await _requests.http("POST", url, data, timeout=300, bearer=key)
+    reply = await _requests.http("POST", url, data, timeout=600, bearer=key)
     try:
         message = reply["choices"][0]["message"]
         return message.get("content") or ""

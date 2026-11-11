@@ -436,7 +436,9 @@ class ActiveRegionWidget(QFrame):
         self._improve_button.setToolTip(_("Improving prompt..."))
         try:
             client = root.connection.client_if_connected
-            result = await improve_prompt(original, model.style, client)
+            result = await improve_prompt(
+                original, model.style, client, model.is_editing, model.document.extent
+            )
             if self.region is region and region.positive == original:
                 self._replace_positive(result)
             else:

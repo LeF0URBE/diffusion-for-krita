@@ -368,7 +368,12 @@ class Settings(QObject):
     _prompt_enhancer_instructions = Setting(
         _("Improve Prompt Instructions"),
         "",
-        _("Additional instructions for the language model, eg. 'keep it short' or 'anime style'"),
+        _("Additional instructions for the language model, eg. 'keep it short' or 'anime style'.")
+        + " "
+        + _(
+            "Each model type has its own built-in template; to replace one, put a text file like "
+            "illu.txt or qwen_e_p-edit.txt in the prompt_templates folder of the plugin data."
+        ),
     )
 
     save_image_metadata: bool
