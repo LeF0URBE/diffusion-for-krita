@@ -179,14 +179,28 @@ def test_selection_edit():
         assert len(find(nodes, "DifferentialDiffusion")) == 0
 
 
-def test_large_canvas_single_pass():
+@pytest.mark.parametrize(
+    "size", [(128, 160), (1000, 1000), (1448, 1448), (4096, 4096), (6144, 4096)]
+)
+def test_native_resolution(size):
     style = Style(Path("default.json"))
-    perf = PerformanceSettings()
-    scaled, _, _ = prepare_diffusion_input(Extent(6144, 6144), None, Arch.h3, style, perf)
-    assert scaled.initial == scaled.desired  # no second refine pass
-    assert scaled.initial.pixel_count <= 2560**2
-    assert scaled.initial.width % 32 == 0 and scaled.initial.height % 32 == 0
-    assert scaled.target == Extent(6144, 6144)
+    perf = PerformanceSettings(max_pixel_count=0)  # no user limit
+    extent = Extent(*size)
+    image = Image.create(extent)
+    scaled, out, _ = prepare_diffusion_input(extent, image, Arch.h3, style, perf)
+    # generated at canvas size, no scaling down or up in the background
+    assert scaled.input == scaled.initial == scaled.desired == scaled.target == extent
+    assert out is image
+
+
+def test_native_resolution_respects_max_pixel_count():
+    style = Style(Path("default.json"))
+    perf = PerformanceSettings(max_pixel_count=6)
+    extent = Extent(4096, 4096)
+    scaled, _, _ = prepare_diffusion_input(extent, Image.create(extent), Arch.h3, style, perf)
+    assert scaled.initial == scaled.desired  # single pass, at the user's limit
+    assert scaled.initial.pixel_count <= 6 * 10**6 * 1.01
+    assert scaled.target == extent
 
 
 def test_sampler_preset():
