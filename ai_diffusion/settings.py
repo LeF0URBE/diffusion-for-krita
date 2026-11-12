@@ -382,9 +382,9 @@ class Settings(QObject):
     prompt_enhancer_unload: bool
     _prompt_enhancer_unload = Setting(
         _("Unload Language Model"),
-        False,
+        True,
         _(
-            "Free the GPU memory after Improve Prompt, for when the language model and the image model don't fit together. The next run loads them again."
+            "Free the GPU memory after Improve Prompt, so the language model doesn't slow down the next generation. The next run loads the models again."
         ),
     )
 
