@@ -123,6 +123,23 @@ class Error(NamedTuple):
 no_error = Error(ErrorKind.none, "")
 
 
+class JobArea(NamedTuple):
+    """The part of the canvas the next generation job works on."""
+
+    strength: float
+    kind: WorkflowKind
+    mask: Mask | None
+    bounds: Bounds
+    selection_bounds: Bounds | None
+    selection_modifiers: SelectionModifiers
+    region_layer: Layer | None
+    inpaint_mode: InpaintMode | None
+
+    @property
+    def has_canvas_input(self):
+        return self.mask is not None or self.kind is WorkflowKind.refine
+
+
 class DocumentModel(QObject, ObservableProperties):
     """Represents diffusion workflows for a specific Krita document. Stores all inputs related to
     image generation. Launches generation jobs. Listens to server messages and keeps a
@@ -228,7 +245,8 @@ class DocumentModel(QObject, ObservableProperties):
         )
         eventloop.run(_report_errors(self, jobs))
 
-    def _prepare_workflow(self, dryrun=False):
+    def _job_area(self):
+        """The selection or region the next job works on, and the canvas bounds it gets."""
         arch = self.arch
         workflow_kind = WorkflowKind.generate
         strength = self.strength
@@ -236,19 +254,17 @@ class DocumentModel(QObject, ObservableProperties):
             strength = 1.0
         if strength < 1.0 or self.is_editing:
             workflow_kind = WorkflowKind.refine
-        client = self._connection.client
-        image = None
         inpaint_mode: InpaintMode | None = None
-        inpaint = None
         extent = self._doc.extent
-        regions = self.active_regions
         region_layer = None
 
         smod = get_selection_modifiers(arch, self.inpaint.mode, strength)
         mask, selection_bounds = self._doc.create_mask_from_selection(smod)
         bounds = Bounds(0, 0, *extent)
         if mask is None:  # Check for region inpaint
-            region_layer = regions.get_active_region_layer(use_parent=not self.region_only)
+            region_layer = self.active_regions.get_active_region_layer(
+                use_parent=not self.region_only
+            )
             if not region_layer.is_root:
                 mask = get_region_inpaint_mask(region_layer, extent)
                 bounds = mask.bounds
@@ -257,6 +273,28 @@ class DocumentModel(QObject, ObservableProperties):
             bounds = compute_bounds(extent, mask.bounds if mask else None, workflow_kind)
             bounds = self.inpaint.get_context(self, mask) or bounds
             inpaint_mode = self.resolve_inpaint_mode()
+
+        return JobArea(
+            strength,
+            workflow_kind,
+            mask,
+            bounds,
+            selection_bounds,
+            smod,
+            region_layer,
+            inpaint_mode,
+        )
+
+    def _prepare_workflow(self, dryrun=False):
+        arch = self.arch
+        area = self._job_area()
+        strength, workflow_kind, mask, bounds = area.strength, area.kind, area.mask, area.bounds
+        inpaint_mode, region_layer = area.inpaint_mode, area.region_layer
+        client = self._connection.client
+        image = None
+        inpaint = None
+        extent = self._doc.extent
+        regions = self.active_regions
 
         if not dryrun:
             conditioning, job_regions = process_regions(regions, bounds, region_layer)
@@ -268,9 +306,7 @@ class DocumentModel(QObject, ObservableProperties):
         ref_layers: dict[str, int] | None = None
         if not dryrun:
             # The H3 image models always edit the canvas as <Picture 1> when they get one
-            canvas_input = arch in (Arch.h3, Arch.ph3) and (
-                mask is not None or workflow_kind is WorkflowKind.refine
-            )
+            canvas_input = arch in (Arch.h3, Arch.ph3) and area.has_canvas_input
             conditioning, ref_layers = self._add_reference_layers(conditioning, canvas_input)
 
         original_conditioning = conditioning
@@ -279,7 +315,7 @@ class DocumentModel(QObject, ObservableProperties):
             conditioning, self.style, seed, arch, inpaint_instruction, ref_layers
         )
 
-        if mask is not None or workflow_kind is WorkflowKind.refine:
+        if area.has_canvas_input:
             image = self._get_current_image(bounds) if not dryrun else DummyImage(bounds.extent)
 
         if mask is not None:
@@ -297,7 +333,9 @@ class DocumentModel(QObject, ObservableProperties):
                 inpaint = workflow.detect_inpaint(
                     inpaint_mode, mask.bounds, arch, conditioning, strength
                 )
-            inpaint = calc_selection_pre_process(inpaint, selection_bounds, smod)
+            inpaint = calc_selection_pre_process(
+                inpaint, area.selection_bounds, area.selection_modifiers
+            )
 
         input = workflow.prepare(
             workflow_kind,
