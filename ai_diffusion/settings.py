@@ -343,7 +343,48 @@ class Settings(QObject):
         _("Improve Prompt"),
         PromptEnhancer.comfy,
         _(
-            "Language model used by the Improve Prompt button. ComfyUI runs the style's own text encoder (Qwen and Gemma based models only)."
+            "Language model used by the Improve Prompt button. ComfyUI runs a language model from its text_encoders folder (Qwen and Gemma based models only), chosen with the arrow next to the button."
+        ),
+    )
+
+    prompt_enhancer_llm: str
+    _prompt_enhancer_llm = Setting(
+        _("Improve Prompt Language Model"),
+        "",
+        _(
+            "Text encoder file on the ComfyUI server which writes the prompt. Empty: automatic, the fastest suitable model for the style."
+        ),
+    )
+
+    prompt_enhancer_vision: bool
+    _prompt_enhancer_vision = Setting(
+        _("Show Pictures to the Language Model"),
+        True,
+        _("Send the canvas and reference images with the prompt, for models which can see them."),
+    )
+
+    prompt_enhancer_thinking: bool
+    _prompt_enhancer_thinking = Setting(
+        _("Language Model Thinks First"),
+        False,
+        _("Let the language model reason before it writes. Slower, sometimes better for edits."),
+    )
+
+    prompt_enhancer_official: bool
+    _prompt_enhancer_official = Setting(
+        _("Official Prompt Enhancer"),
+        False,
+        _(
+            "Use the model maker's own prompt enhancer instructions where the plugin has its own (MiniMax-H3-Image). They think first: about 2 minutes."
+        ),
+    )
+
+    prompt_enhancer_unload: bool
+    _prompt_enhancer_unload = Setting(
+        _("Unload Language Model"),
+        False,
+        _(
+            "Free the GPU memory after Improve Prompt, for when the language model and the image model don't fit together. The next run loads them again."
         ),
     )
 
