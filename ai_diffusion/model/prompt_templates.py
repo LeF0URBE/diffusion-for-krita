@@ -423,7 +423,7 @@ def has_official(arch: Arch, editing: bool):
     return key(arch, editing) in _official_alt
 
 
-def builtin(arch: Arch, editing: bool, vision=True, official=False):
+def builtin(arch: Arch, editing: bool, vision=False, official=False):
     """The template shipped with the plugin and where it comes from ("official", "expert" or
     "builtin"). `vision`: whether the language model sees the pictures. `official`: the model
     maker's enhancer instead of the plugin's own template, where there is one."""
@@ -439,7 +439,7 @@ def builtin(arch: Arch, editing: bool, vision=True, official=False):
     return (_fallback_edit if is_edit(arch, editing) else _fallback), "builtin"
 
 
-def get(arch: Arch, editing: bool, folder: Path | None = None, vision=True, official=False):
+def get(arch: Arch, editing: bool, folder: Path | None = None, vision=False, official=False):
     """The template for `arch` and its source, from a user file if there is one."""
     if folder is not None:
         file = user_file(arch, editing, folder)
@@ -490,7 +490,7 @@ def build(
     extent: Extent | None = None,
     extra: str = "",
     folder: Path | None = None,
-    vision=True,
+    vision=False,
     official=False,
 ):
     """The messages for the language model. `extra` is added to the system prompt."""

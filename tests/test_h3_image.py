@@ -244,9 +244,9 @@ def test_improve_prompt_templates():
     assert not request.options.thinking and "qwen3.5_9b_w4a8" in request.options.llms
 
     assert prompt_templates.key(Arch.h3, True) == "h3-edit"
-    edit, source = prompt_templates.builtin(Arch.h3, True)
+    edit, source = prompt_templates.builtin(Arch.h3, True, vision=True)
     assert source == "expert" and "<Subject 1>" in edit
-    blind, source = prompt_templates.builtin(Arch.h3, True, vision=False)
+    blind, source = prompt_templates.builtin(Arch.h3, True)  # vision is opt-in
     assert source == "expert" and blind != edit
     assert prompt_templates.options(Arch.h3, True).vision
 

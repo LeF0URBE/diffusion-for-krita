@@ -62,7 +62,7 @@ def build_request(
     editing=False,
     style_prompt="",
     extent: Extent | None = None,
-    vision=True,
+    vision=False,
     official=False,
 ):
     extra = extra_instructions(style_prompt)

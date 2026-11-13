@@ -539,7 +539,8 @@ class ActiveRegionWidget(QFrame):
         folder.mkdir(parents=True, exist_ok=True)
         file = prompt_templates.user_file(arch, editing, folder)
         if not file.exists():
-            text, __ = prompt_templates.builtin(arch, editing)
+            vision = settings.prompt_enhancer_vision
+            text, __ = prompt_templates.builtin(arch, editing, vision)
             file.write_text(text + "\n", encoding="utf-8")
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(file)))
 

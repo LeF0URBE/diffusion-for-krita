@@ -359,8 +359,10 @@ class Settings(QObject):
     prompt_enhancer_vision: bool
     _prompt_enhancer_vision = Setting(
         _("Show Pictures to the Language Model"),
-        True,
-        _("Send the canvas and reference images with the prompt, for models which can see them."),
+        False,
+        _(
+            "Send the canvas and reference images with the prompt. Only for language models which can see pictures, like Qwen3.5, Qwen3-VL and Gemma."
+        ),
     )
 
     prompt_enhancer_thinking: bool
