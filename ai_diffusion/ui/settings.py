@@ -1422,11 +1422,13 @@ class SettingsDialog(QDialog):
         type(self)._instance = self
 
         self.setWindowTitle(_("Configure Diffusion for Krita"))
-        self.setMinimumSize(QSize(960, 480))
+        min_size = QSize(960, 480)
         if screen := QGuiApplication.screenAt(QCursor.pos()):
             size = screen.availableSize()
+            min_size = min_size.boundedTo(size)  # small screens and high display scaling
             min_w = min(size.width(), QFontMetrics(self.font()).horizontalAdvance("M") * 100)
             self.resize(QSize(min_w, int(size.height() * 0.8)))
+        self.setMinimumSize(min_size)
 
         layout = QHBoxLayout()
         self.setLayout(layout)
@@ -1441,20 +1443,23 @@ class SettingsDialog(QDialog):
 
         self._stack = QStackedWidget(self)
         self._list = QListWidget(self)
-        self._list.setFixedWidth(120)
-
-        def create_list_item(text: str, widget: QWidget):
+        pages = [
+            (_("Connection"), self.connection),
+            (_("Styles"), self.styles),
+            (_("Diffusion"), self.diffusion),
+            (_("Interface"), self.interface),
+            (_("LLM"), self.llm),
+            (_("Performance"), self.performance),
+            (_("Plugin"), self.about),
+        ]
+        # Sized for the font and the translated names, which can be larger than the default
+        metrics = self._list.fontMetrics()
+        text_width = max(metrics.horizontalAdvance(text) for text, __ in pages)
+        for text, widget in pages:
             item = QListWidgetItem(text, self._list)
-            item.setSizeHint(QSize(112, 24))
+            item.setSizeHint(QSize(text_width + 16, max(24, metrics.height() + 8)))
             self._stack.addWidget(widget)
-
-        create_list_item(_("Connection"), self.connection)
-        create_list_item(_("Styles"), self.styles)
-        create_list_item(_("Diffusion"), self.diffusion)
-        create_list_item(_("Interface"), self.interface)
-        create_list_item(_("LLM"), self.llm)
-        create_list_item(_("Performance"), self.performance)
-        create_list_item(_("Plugin"), self.about)
+        self._list.setFixedWidth(max(120, text_width + 32))
 
         self._list.setCurrentRow(0)
         self._list.currentRowChanged.connect(self._change_page)
