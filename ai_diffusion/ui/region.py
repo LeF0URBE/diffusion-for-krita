@@ -394,6 +394,8 @@ class ActiveRegionWidget(QFrame):
             self._update_prompt_widgets()
         elif key == "prompt_translation":
             self._update_language()
+        elif key in {"prompt_enhancer", "prompt_enhancer_llm"}:
+            self._update_improve_tooltip()
 
     async def _replace_with_translation(self, client: Client):
         region = self.region
