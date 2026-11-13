@@ -602,13 +602,9 @@ class ComfyClient(Client):
         images: list[Image] | None = None,
         unload: bool = False,
     ):
-        nodes = self.models.node_inputs
-        # TextGenerateV2 (ComfyUI 0.43+) takes several pictures of different sizes
-        node = "TextGenerateV2" if "TextGenerateV2" in nodes else "TextGenerate"
-        if node not in nodes:
-            raise RuntimeError(_("ComfyUI is too old: the TextGenerate node is missing"))
-        if images and node != "TextGenerateV2":
-            raise RuntimeError(_("ComfyUI is too old to show pictures to the language model"))
+        node = text_generate_node(self.models.node_inputs, with_images=bool(images))
+        if node != "TextGenerateV2":
+            images = None
         loader = "CLIPLoaderGGUF" if text_encoder.endswith(".gguf") else "CLIPLoader"
         sampling_args: dict[str, Any] = {"sampling_mode": "off"}
         if sampling:
@@ -875,6 +871,20 @@ def _find_text_encoder_models(model_list: Sequence[str]):
     return {
         resource_id(kind, Arch.all, te): _find_model(model_list, kind, Arch.all, te) for te in tes
     }
+
+
+def text_generate_node(nodes: ComfyObjectInfo, with_images=False):
+    """TextGenerateV2 (ComfyUI 0.43+) takes several pictures of different sizes. Older servers
+    fall back to TextGenerate, without the pictures."""
+    if "TextGenerateV2" in nodes:
+        return "TextGenerateV2"
+    if "TextGenerate" not in nodes:
+        raise RuntimeError(_("ComfyUI is too old: the TextGenerate node is missing"))
+    if with_images:
+        log.warning(
+            "TextGenerateV2 is missing (ComfyUI older than 0.43), generating without pictures"
+        )
+    return "TextGenerate"
 
 
 def _find_control_models(model_list: Sequence[str]):

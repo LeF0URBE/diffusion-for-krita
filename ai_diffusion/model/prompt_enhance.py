@@ -327,8 +327,7 @@ async def improve_prompt(
         llm = select_llm(arch, style, client, opts, source, settings.prompt_enhancer_llm)
 
     images: list[Image] = []
-    can_see = use_openai or (llm is not None and llm.enhancer is None)
-    if opts.vision and pictures and settings.prompt_enhancer_vision and can_see:
+    if opts.vision and pictures and settings.prompt_enhancer_vision and _can_see(llm, client):
         if all(p.image is not None for p in pictures):
             images = [_prepare_image(p.image) for p in pictures if p.image is not None]
     if official and pictures and not images:  # MiniMax's edit enhancer must see the pictures
@@ -357,6 +356,18 @@ async def improve_prompt(
     if not result:
         raise RuntimeError(_("The language model returned an empty prompt."))
     return result
+
+
+def _can_see(llm: LanguageModel | None, client: Client | None):
+    """Whether pictures can go to the language model. None is the OpenAI-compatible server."""
+    if llm is None:
+        return True
+    if llm.enhancer is not None or client is None:  # dedicated enhancers only take text
+        return False
+    if "TextGenerateV2" not in client.models.node_inputs:
+        log.warning("Improve Prompt: ComfyUI is older than 0.43, writing without the pictures")
+        return False
+    return True
 
 
 def _thinking(opts: prompt_templates.Options):

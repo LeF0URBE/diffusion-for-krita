@@ -6,6 +6,7 @@ import pytest
 from ai_diffusion.backend import workflow
 from ai_diffusion.backend.api import CheckpointInput
 from ai_diffusion.backend.client import CheckpointInfo, Client, ClientModels
+from ai_diffusion.backend.comfy_client import text_generate_node
 from ai_diffusion.backend.comfy_workflow import ComfyObjectInfo, ComfyWorkflow
 from ai_diffusion.backend.resources import ResourceKind, resource_id
 from ai_diffusion.files import FileFormat
@@ -292,3 +293,23 @@ def test_select_llm():
     assert select(client, chosen=h3_text_encoder) == (h3_text_encoder, "minimax", None)
     assert select(client, chosen="missing.safetensors").file == fast_llm
     assert select(llm_client(h3_text_encoder)).file == h3_text_encoder  # style's own
+
+
+def test_text_generate_node():
+    nodes = ComfyObjectInfo({"TextGenerate": {}, "TextGenerateV2": {}})
+    assert text_generate_node(nodes, with_images=True) == "TextGenerateV2"
+    old = ComfyObjectInfo({"TextGenerate": {}})
+    assert text_generate_node(old, with_images=True) == "TextGenerate"  # without the pictures
+    with pytest.raises(RuntimeError):
+        text_generate_node(ComfyObjectInfo({}))
+
+
+def test_can_see():
+    client = llm_client(fast_llm)
+    llm = prompt_enhance.LanguageModel(fast_llm, "minimax")
+    assert not prompt_enhance._can_see(llm, client)  # ComfyUI without TextGenerateV2
+    client.models.node_inputs.nodes["TextGenerateV2"] = {}
+    assert prompt_enhance._can_see(llm, client)
+    enhancer = ensure(prompt_templates.options(Arch.ph3, False).enhancer)
+    assert not prompt_enhance._can_see(llm._replace(enhancer=enhancer), client)
+    assert prompt_enhance._can_see(None, None)  # OpenAI-compatible server
